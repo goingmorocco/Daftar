@@ -29,7 +29,7 @@ export function seedDemo() {
     ['Mr. Daoudi', 3, 'percent', 40], ['Mme Rifi', 4, 'per_session', 140],
   ].map(([full_name, si, pay_type, pay_rate]) => ({ id: id('tch'), org_id: org.id, full_name, phone: '06' + String(Math.floor(r() * 1e8)).padStart(8, '0'),
     subject_ids: [subjects[si].id], pay_type, pay_rate, active: true }));
-  const colors = ['#0f6e5c', '#c2670c', '#2563eb', '#9333ea', '#db2777', '#0891b2', '#65a30d', '#b45309'];
+  const colors = ['#1b3a8c', '#d7262e', '#0e7490', '#9333ea', '#db2777', '#0891b2', '#65a30d', '#b45309'];
   const groupDefs = [
     [3, 0, 0, [[1, '18:00', '19:30'], [4, '18:00', '19:30']]], [2, 0, 0, [[2, '18:00', '19:30'], [6, '10:00', '11:30']]],
     [3, 1, 1, [[3, '17:30', '19:00'], [6, '14:00', '15:30']]], [1, 2, 2, [[2, '17:00', '18:30']]],

@@ -169,7 +169,7 @@ export const waitlist = {
 };
 
 // ---------------------------------------------------------------- Team
-const ROLES = { owner: 'Propriétaire', admin: 'Administrateur', staff: 'Accueil / Staff', teacher: 'Enseignant' };
+const ROLES = { owner: 'Admin (propriétaire)', admin: 'Admin', staff: 'Employé', teacher: 'Enseignant' };
 
 export const team = {
   title: 'Équipe',
@@ -194,7 +194,7 @@ export const team = {
           <td class="r nowrap">${self || locked ? '' : m.status === 'pending' ? `<button class="btn sm primary" data-act="approve" data-id="${m.id}">${icon('check')}Approuver</button><button class="btn sm ghost danger" data-act="remove" data-id="${m.id}">Refuser</button>`
             : m.status === 'active' ? `<button class="btn sm ghost" data-act="disable" data-id="${m.id}">Désactiver</button>` : `<button class="btn sm" data-act="approve" data-id="${m.id}">Réactiver</button><button class="btn sm ghost danger" data-act="remove" data-id="${m.id}">${icon('trash')}</button>`}</td></tr>`; }).join('')}
       </tbody></table></div></div>
-      <div class="card card-pad small muted" style="margin-top:16px"><b>Rôles :</b> Propriétaire et Administrateur gèrent tout (réglages, équipe, paie). Accueil / Staff gère élèves, groupes, paiements, relances et dépenses. Enseignant voit uniquement ses groupes, son emploi du temps et prend les présences — sans accès aux paiements.</div>`;
+      <div class="card card-pad small muted" style="margin-top:16px"><b>Rôles :</b> Admin — tout, y compris les finances (chiffres du mois, encaissements, dépenses, paie des enseignants), les réglages et l'équipe. Employé — élèves, groupes, emploi du temps, encaissement des paiements, relances et liste d'attente, sans vue financière. Enseignant — uniquement ses groupes, son emploi du temps et les présences.</div>`;
   },
   changes: {
     async role(el, app) { await app.save('ctr_members', { role: el.value }, el.dataset.id); toast('Rôle mis à jour.'); await app.refresh('members'); },

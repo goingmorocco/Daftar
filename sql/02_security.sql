@@ -396,3 +396,12 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ---------- Expenses are admin-only (employees never see them) ----------
+drop policy if exists ctr_expenses_write on public.ctr_expenses;
+drop policy if exists ctr_expenses_staff_select on public.ctr_expenses;
+create policy ctr_expenses_select on public.ctr_expenses for select to authenticated
+  using (public.ctr_is_manager(org_id));
+create policy ctr_expenses_write on public.ctr_expenses for all to authenticated
+  using (public.ctr_is_manager(org_id) and public.ctr_org_active(org_id))
+  with check (public.ctr_is_manager(org_id) and public.ctr_org_active(org_id));

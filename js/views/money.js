@@ -21,7 +21,7 @@ export const payments = {
   render(app, r) {
     const st = app.viewState;
     st.month ||= L.monthStart(L.today());
-    const tab = r.q.tab || 'invoices';
+    const tab = app.isManager ? (r.q.tab || 'invoices') : 'invoices';
     const ms = st.month, me = L.monthEnd(ms);
     const inStudentCenter = sid => app.inCenter(app.by('students', sid) || {});
     let body;
@@ -62,10 +62,9 @@ export const payments = {
             <td class="r"><button class="btn sm ghost" data-act="receipt" data-id="${p.id}">${icon('print')}</button></td></tr>`; }).join('')}
           </tbody></table></div>` : emptyState('Aucun paiement ce mois-ci', '', '', 'wallet')}</div>`;
     }
-    return `${pageHead('Paiements', 'Ce qui est facturé, encaissé, en attente ou en retard.', `${monthNav(app)}
+    return `${pageHead('Paiements', app.isManager ? 'Ce qui est facturé, encaissé, en attente ou en retard.' : 'Factures des élèves et encaissements.', `${monthNav(app)}
         <button class="btn" data-act="newInvoice">${icon('receipt')}Facture ponctuelle</button><button class="btn primary" data-act="newPayment">${icon('wallet')}Encaisser</button>`)}
-      ${moneyKpis(app, ms, me)}
-      <div class="tabs"><a href="#/payments?tab=invoices" class="${tab === 'invoices' ? 'on' : ''}">Factures</a><a href="#/payments?tab=received" class="${tab === 'received' ? 'on' : ''}">Paiements reçus</a></div>
+      ${app.isManager ? moneyKpis(app, ms, me) + `<div class="tabs"><a href="#/payments?tab=invoices" class="${tab === 'invoices' ? 'on' : ''}">Factures</a><a href="#/payments?tab=received" class="${tab === 'received' ? 'on' : ''}">Paiements reçus</a></div>` : ''}
       ${body}`;
   },
   inputs: { q(el, app) { app.viewState.q = el.value; app.rerender(); } },
@@ -162,7 +161,7 @@ async function expenseDialog(app, e = null) {
 
 export const expenses = {
   title: 'Dépenses',
-  allow: app => app.isStaff,
+  allow: app => app.isManager,
   render(app) {
     const st = app.viewState; st.month ||= L.monthStart(L.today());
     const ms = st.month, me = L.monthEnd(ms);

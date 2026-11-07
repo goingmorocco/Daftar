@@ -154,11 +154,12 @@ function nav(app, current) {
     : [
         ['dashboard', 'home', 'Tableau de bord'], ['students', 'users', 'Élèves'], ['groups', 'layers', 'Groupes'],
         ['schedule', 'calendar', 'Emploi du temps'], ['payments', 'wallet', 'Paiements'], ['reminders', 'bell', 'Relances', remCount],
-        ['waitlist', 'clock', "Liste d'attente"], ['teachers', 'teacher', 'Enseignants'], ['expenses', 'receipt', 'Dépenses'],
+        ['waitlist', 'clock', "Liste d'attente"], ['teachers', 'teacher', 'Enseignants'],
+        ...(app.isManager ? [['expenses', 'receipt', 'Dépenses']] : []),
       ];
   const admin = app.isManager ? [['team', 'team', 'Équipe', pending], ['settings', 'settings', 'Réglages'], ['billing', 'card', 'Abonnement']] : [];
   if (app.platformAdmin) admin.push(['admin', 'shield', 'Plateforme']);
-  const link = ([k, ic, label, count]) => `<a href="#/${k}" class="${current === k ? 'active' : ''}">${icon(ic)}<span>${esc(label)}</span>${count ? `<span class="count">${count}</span>` : ''}</a>`;
+  const link = ([k, ic, label, count]) => `<a href="#/${k}" class="${current === k ? 'active' : ''}" title="${esc(label)}">${icon(ic)}<span>${esc(label)}</span>${count ? `<span class="count">${count}</span>` : ''}</a>`;
   return `<nav class="nav">${items.map(link).join('')}</nav>${admin.length ? `<div class="nav-section">Administration</div><nav class="nav">${admin.map(link).join('')}</nav>` : ''}`;
 }
 
@@ -166,20 +167,21 @@ function shell(app, current, content) {
   const orgOpts = app.orgs.length > 1 ? `<div class="org-switch"><select data-change="switchOrg" aria-label="Changer de centre">${app.orgs.map(o => `<option value="${o.id}"${o.id === app.org.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></div>` : '';
   const centers = (app.s.centers || []).filter(c => c.active);
   const centerSel = centers.length > 1 && !app.isTeacher ? `<div class="org-switch"><select data-change="switchCenter" aria-label="Filtrer par site"><option value="">Tous les sites</option>${centers.map(c => `<option value="${c.id}"${c.id === app.centerId ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : '';
-  const brand = `<div class="brand"><span class="brand-mark">${LOGO}</span>${esc(cfg.APP_NAME || 'Daftar')}</div>`;
-  const roleLabel = { owner: 'Propriétaire', admin: 'Administrateur', staff: 'Accueil / Staff', teacher: 'Enseignant' }[app.role];
+  const brand = `<div class="brand"><span class="brand-mark">${LOGO}</span><span class="brand-text">${esc(cfg.APP_NAME || 'Daftar')}</span></div>`;
+  let collapsed = false; try { collapsed = localStorage.getItem('daftar-collapsed') === '1'; } catch { /* ignore */ }
+  const roleLabel = { owner: 'Admin (propriétaire)', admin: 'Admin', staff: 'Employé', teacher: 'Enseignant' }[app.role];
   const left = L.daysLeft(app.org);
   let banner = '';
   if (app.DEMO) banner += `<div class="banner info">${icon('book')}<span>Mode démo — données fictives enregistrées dans ce navigateur.</span>
-      <select data-change="demoRole" class="btn sm" aria-label="Rôle de démonstration">${['owner', 'staff', 'teacher'].map(r => `<option value="${r}"${app.role === r ? ' selected' : ''}>Voir comme : ${{ owner: 'Directeur', staff: 'Accueil', teacher: 'Enseignant' }[r]}</option>`).join('')}</select>
+      <select data-change="demoRole" class="btn sm" aria-label="Rôle de démonstration">${['owner', 'staff', 'teacher'].map(r => `<option value="${r}"${app.role === r ? ' selected' : ''}>Voir comme : ${{ owner: 'Admin', staff: 'Employé', teacher: 'Enseignant' }[r]}</option>`).join('')}</select>
       <button class="btn sm" data-act="demoReset">Réinitialiser</button></div>`;
   if (!app.active) banner += `<div class="banner bad">${icon('alert')}<span>Abonnement expiré : lecture seule. Renouvelez pour continuer à travailler.</span>${app.isManager ? '<a class="btn sm" href="#/billing">Renouveler</a>' : ''}</div>`;
   else if (app.org.plan === 'trial' && left !== null && left <= 15) banner += `<div class="banner warn">${icon('clock')}<span>Essai gratuit : ${left} jour(s) restant(s).</span>${app.isManager ? '<a class="btn sm" href="#/billing">Choisir un plan</a>' : ''}</div>`;
-  return `<div class="app" id="shell">
-    <aside class="sidebar">${brand}${orgOpts}${centerSel}${nav(app, current)}
+  return `<div class="app${collapsed ? ' collapsed' : ''}" id="shell">
+    <aside class="sidebar"><div class="side-head">${brand}<button class="collapse-btn" data-act="collapse" title="Réduire / agrandir le menu" aria-label="Réduire le menu">${icon('chevL')}</button></div>${orgOpts}${centerSel}${nav(app, current)}
       <div class="sidebar-foot">
-        <div class="me"><span class="avatar">${esc(L.initials(app.me?.full_name || app.user?.email))}</span><div style="min-width:0"><div class="cell-main" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(app.me?.full_name || app.user?.email)}</div><div class="cell-sub">${esc(roleLabel)} · ${esc(app.org.name)}</div></div></div>
-        <div class="actions"><button class="btn sm ghost" data-act="theme">${icon('moon')}Thème</button><button class="btn sm ghost" data-act="logout">${icon('logout')}Déconnexion</button></div>
+        <div class="me" title="${esc(app.me?.full_name || app.user?.email)} — ${esc(roleLabel)}"><span class="avatar">${esc(L.initials(app.me?.full_name || app.user?.email))}</span><div class="me-text"><div class="me-name">${esc(app.me?.full_name || app.user?.email)}</div><div class="me-role">${esc(roleLabel)} · ${esc(app.org.name)}</div></div></div>
+        <div class="foot-actions"><button class="btn sm" data-act="theme" title="Thème clair / sombre">${icon('moon')}<span>Thème</span></button><button class="btn sm" data-act="logout" title="Déconnexion">${icon('logout')}<span>Quitter</span></button></div>
       </div>
     </aside>
     <div class="main">
@@ -191,6 +193,11 @@ function shell(app, current, content) {
 // ---------- global events ----------
 const globalActions = {
   navToggle: () => document.getElementById('shell')?.classList.toggle('nav-open'),
+  collapse() {
+    const el = document.getElementById('shell'); const on = !el.classList.contains('collapsed');
+    el.classList.toggle('collapsed', on);
+    try { localStorage.setItem('daftar-collapsed', on ? '1' : '0'); } catch { /* ignore */ }
+  },
   theme() {
     const r = document.documentElement;
     const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
@@ -242,7 +249,7 @@ window.addEventListener('hashchange', () => app.render());
 function authShell(inner) {
   return `<div class="auth">
     <div class="auth-side">
-      <div class="brand" style="color:inherit"><span class="brand-mark" style="background:var(--primary-ink);color:var(--primary)">${LOGO}</span>${esc(cfg.APP_NAME || 'Daftar')}</div>
+      <div class="brand" style="color:inherit"><span class="brand-mark">${LOGO}</span><span class="brand-text">${esc(cfg.APP_NAME || 'Daftar')}</span></div>
       <div><h1>Toute la gestion de votre centre, au même endroit.</h1>
         <ul style="margin-top:24px">${['Élèves, groupes et inscriptions', 'Emploi du temps et présences', 'Factures et paiements en espèces', 'Relances WhatsApp prêtes à envoyer', 'Paie des enseignants et dépenses']
           .map(t => `<li>${icon('check')}${t}</li>`).join('')}</ul></div>
@@ -298,7 +305,7 @@ function showOnboarding(pending = []) {
       ${field("Code d'équipe", input('code', '', { required: true, placeholder: 'Donné par le responsable' }))}
       ${field('Votre nom', input('full_name', name, { required: true }))}
       ${field('Téléphone', input('phone', ''))}
-      ${field('Je suis', select('role', [{ value: 'staff', label: 'Accueil / administration' }, { value: 'teacher', label: 'Enseignant(e)' }], 'staff'))}
+      ${field('Je suis', select('role', [{ value: 'staff', label: 'Employé (accueil, secrétariat)' }, { value: 'teacher', label: 'Enseignant(e)' }], 'staff'))}
       <button class="btn primary" type="submit">Envoyer la demande</button>
     </form>
     <p class="small" style="margin-top:20px"><a href="#" id="ob-logout">Se déconnecter</a></p>`);

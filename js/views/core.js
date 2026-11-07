@@ -51,7 +51,7 @@ export const dashboard = {
       `<button class="btn" data-act="newPayment">${icon('wallet')}Encaisser</button><button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel élève</button>`)}
       ${alerts.map(a => `<div class="banner warn">${icon('alert')}<span>${a.count} demandes en attente pour ${esc(app.name('levels', a.level_id, 'tout niveau'))} · ${esc(app.name('subjects', a.subject_id, 'toute matière'))} — de quoi ouvrir un groupe.</span><a class="btn sm" href="#/waitlist">Voir</a></div>`).join('')}
       ${pending.length && app.isManager ? `<div class="banner info">${icon('team')}<span>${pending.length} demande(s) d'accès à approuver.</span><a class="btn sm" href="#/team">Approuver</a></div>` : ''}
-      ${moneyKpis(app, ms, L.monthEnd(ms))}
+      ${app.isManager ? moneyKpis(app, ms, L.monthEnd(ms)) : `<div class="kpis k4">${kpi('Élèves actifs', String(students.length))}${kpi("Séances aujourd'hui", String(todays.length))}${kpi('Relances à envoyer', String(unpaid.length), unpaid.length ? 'bad' : '')}${kpi("Liste d'attente", String(app.s.waitlist.filter(w => w.status === 'waiting').length))}</div>`}
       <div class="grid grid-2">
         <div class="card"><div class="card-head"><h2>Séances du jour</h2><a href="#/schedule" class="small">Emploi du temps →</a></div>
           <div class="list">${todays.length ? todays.map(s => sessionLine(app, s)).join('') : emptyState('Aucune séance aujourd\'hui', 'Les séances se créent à partir des horaires de chaque groupe.', '', 'calendar')}</div></div>
@@ -59,8 +59,8 @@ export const dashboard = {
           <div class="list">${unpaid.slice(0, 6).map(r => `<div class="list-item"><div class="grow"><div class="cell-main">${esc(r.student.full_name)}</div><div class="cell-sub">${esc(r.group?.name || r.invoice?.description || '')} · ${r.days} j de retard</div></div>
             <b class="num">${app.money(r.invoice.remaining)}</b>${r.phone ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${L.waLink(r.phone, r.text)}" data-act="logReminder" data-key="${esc(r.key)}">${icon('wa')}</a>` : ''}</div>`).join('')
             || emptyState('Rien à relancer', 'Tous les paiements sont à jour.', '', 'check')}</div></div>
-        <div class="card"><div class="card-head"><h2>Encaissements — 6 derniers mois</h2></div>
-          <div class="card-pad"><div class="bars">${months.map((m, i) => `<div class="bar-col"><span class="val">${coll[i] ? Math.round(coll[i] / 100) / 10 + 'k' : ''}</span><div class="bar" style="height:${Math.round(coll[i] / max * 100)}%" title="${esc(app.money(coll[i]))}"></div><span class="lbl">${esc(L.MONTHS_SHORT[L.parse(m).getMonth()])}</span></div>`).join('')}</div></div></div>
+        ${app.isManager ? `<div class="card"><div class="card-head"><h2>Encaissements — 6 derniers mois</h2></div>
+          <div class="card-pad"><div class="bars">${months.map((m, i) => `<div class="bar-col"><span class="val">${coll[i] ? Math.round(coll[i] / 100) / 10 + 'k' : ''}</span><div class="bar" style="height:${Math.round(coll[i] / max * 100)}%" title="${esc(app.money(coll[i]))}"></div><span class="lbl">${esc(L.MONTHS_SHORT[L.parse(m).getMonth()])}</span></div>`).join('')}</div></div></div>` : ''}
         <div class="card"><div class="card-head"><h2>Votre centre</h2></div>
           <div class="list">
             <div class="list-item"><div class="grow">Élèves actifs</div><b class="num">${students.length}</b></div>
@@ -243,7 +243,7 @@ function slotSummary(app, gid) {
     .map(s => `${L.DAYS_SHORT[s.weekday]} ${L.fmtTime(s.start_time)}–${L.fmtTime(s.end_time)}`).join(' · ');
 }
 
-const COLORS = ['#0f6e5c', '#c2670c', '#2563eb', '#9333ea', '#db2777', '#0891b2', '#65a30d', '#b42323', '#475569'];
+const COLORS = ['#1b3a8c', '#d7262e', '#0e7490', '#9333ea', '#db2777', '#0891b2', '#65a30d', '#b42323', '#475569'];
 
 export async function groupDialog(app, g = null, preset = {}) {
   const isNew = !g; g = g || { ...preset, active: true, start_date: today(), center_id: app.centerId || app.s.centers[0]?.id, color: COLORS[app.s.groups.length % COLORS.length], capacity: 12 };
