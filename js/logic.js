@@ -264,3 +264,20 @@ export function friendlyError(e) {
   if (m.includes('duplicate key')) return 'Cet élément existe déjà.';
   return m;
 }
+
+// ---------- Timetable conflicts ----------
+/** Sessions that overlap on the same date and share a teacher or a room. */
+export function findConflicts(sessions) {
+  const live = sessions.filter(s => s.status !== 'cancelled').slice().sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
+  const out = [];
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length && live[j].date === live[i].date; j++) {
+      const a = live[i], b = live[j];
+      if (fmtTime(b.start_time) >= fmtTime(a.end_time)) continue;
+      if (a.group_id === b.group_id) continue;
+      if (a.teacher_id && a.teacher_id === b.teacher_id) out.push({ type: 'teacher', a, b });
+      if (a.room_id && a.room_id === b.room_id) out.push({ type: 'room', a, b });
+    }
+  }
+  return out;
+}

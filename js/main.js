@@ -62,6 +62,7 @@ export const app = {
       for (const k of ['invoices', 'payments', 'expenses', 'payouts', 'reminderLog', 'waitlist']) this.s[k] = [];
       this.fin = L.computeFinance([], [], 7);
     }
+    this.conflicts = L.findConflicts((this.s.sessions || []).filter(s => s.date >= L.today()));
     this.studentStatus = new Map((this.s.students || []).map(st => [st.id, L.studentPaymentStatus(fin.byStudent.get(st.id))]));
     this.reminders = this.isStaff ? L.buildReminders({ invoices: this.fin.invoices, enrollments: this.s.enrollments, students: this.s.students,
       groups: this.s.groups, reminderLog: this.s.reminderLog, settings: this.settings, orgName: this.org.name }) : [];
@@ -146,53 +147,134 @@ export const app = {
 };
 
 // ---------- layout ----------
-function nav(app, current) {
+const ROLE_LABEL = { owner: 'Admin', admin: 'Admin', staff: 'Employé', teacher: 'Enseignant' };
+
+/** Navigation sections, filtered by role. Each item: [route, icon, label, count?] */
+function navSections(app) {
   const remCount = app.reminders.filter(x => !x.sent && x.kind === 'unpaid').length;
   const pending = (app.s.members || []).filter(m => m.status === 'pending').length;
-  const items = app.isTeacher
-    ? [['schedule', 'calendar', 'Emploi du temps'], ['groups', 'layers', 'Mes groupes']]
-    : [
-        ['dashboard', 'home', 'Tableau de bord'], ['students', 'users', 'Élèves'], ['groups', 'layers', 'Groupes'],
-        ['schedule', 'calendar', 'Emploi du temps'], ['payments', 'wallet', 'Paiements'], ['reminders', 'bell', 'Relances', remCount],
-        ['waitlist', 'clock', "Liste d'attente"], ['teachers', 'teacher', 'Enseignants'],
-        ...(app.isManager ? [['expenses', 'receipt', 'Dépenses']] : []),
-      ];
-  const admin = app.isManager ? [['team', 'team', 'Équipe', pending], ['settings', 'settings', 'Réglages'], ['billing', 'card', 'Abonnement']] : [];
-  if (app.platformAdmin) admin.push(['admin', 'shield', 'Plateforme']);
+  if (app.isTeacher) return [['Aperçu', [['schedule', 'calendar', 'Emploi du temps']]], ['Académique', [['groups', 'layers', 'Mes groupes']]]];
+  const conflicts = app.conflicts?.length || 0;
+  const sections = [
+    ['Aperçu', [['dashboard', 'home', 'Tableau de bord'], ['schedule', 'calendar', 'Emploi du temps'], ['conflicts', 'alert', 'Conflits', conflicts]]],
+    ['Académique', [['groups', 'layers', 'Groupes'], ['students', 'users', 'Étudiants'], ['alumni', 'userOut', 'Étudiants sortis'],
+      ['waitlist', 'hourglass', "Liste d'attente"], ['teachers', 'teacher', 'Enseignants']]],
+    ['Finances', [...(app.isManager ? [['report', 'bank', 'Bilan mensuel']] : []), ['payments', 'wallet', 'Paiements'],
+      ...(app.isManager ? [['expenses', 'receipt', 'Dépenses']] : []), ['reminders', 'bell', 'Suivis', remCount]]],
+  ];
+  if (app.isManager) {
+    const centre = [['settings', 'settings', 'Paramètres'], ['team', 'team', 'Équipe', pending], ['billing', 'card', 'Abonnement']];
+    if (app.platformAdmin) centre.push(['admin', 'shield', 'Plateforme']);
+    sections.push(['Centre', centre]);
+  }
+  return sections;
+}
+
+function nav(app, current) {
   const link = ([k, ic, label, count]) => `<a href="#/${k}" class="${current === k ? 'active' : ''}" title="${esc(label)}">${icon(ic)}<span>${esc(label)}</span>${count ? `<span class="count">${count}</span>` : ''}</a>`;
-  return `<nav class="nav">${items.map(link).join('')}</nav>${admin.length ? `<div class="nav-section">Administration</div><nav class="nav">${admin.map(link).join('')}</nav>` : ''}`;
+  return navSections(app).map(([title, items]) => `<div class="nav-section">${esc(title)}</div><nav class="nav">${items.map(link).join('')}</nav>`).join('');
+}
+
+export function orgLogo(name) {
+  const ini = L.initials(name).slice(0, 2);
+  return `<span class="org-logo" aria-hidden="true"><span class="a">${esc(ini[0] || '')}</span><span class="b">${esc(ini[1] || '')}</span></span>`;
 }
 
 function shell(app, current, content) {
   const orgOpts = app.orgs.length > 1 ? `<div class="org-switch"><select data-change="switchOrg" aria-label="Changer de centre">${app.orgs.map(o => `<option value="${o.id}"${o.id === app.org.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></div>` : '';
   const centers = (app.s.centers || []).filter(c => c.active);
   const centerSel = centers.length > 1 && !app.isTeacher ? `<div class="org-switch"><select data-change="switchCenter" aria-label="Filtrer par site"><option value="">Tous les sites</option>${centers.map(c => `<option value="${c.id}"${c.id === app.centerId ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : '';
-  const brand = `<div class="brand"><span class="brand-mark">${LOGO}</span><span class="brand-text">${esc(cfg.APP_NAME || 'Daftar')}</span></div>`;
   let collapsed = false; try { collapsed = localStorage.getItem('daftar-collapsed') === '1'; } catch { /* ignore */ }
-  const roleLabel = { owner: 'Admin (propriétaire)', admin: 'Admin', staff: 'Employé', teacher: 'Enseignant' }[app.role];
   const left = L.daysLeft(app.org);
   let banner = '';
   if (app.DEMO) banner += `<div class="banner info">${icon('book')}<span>Mode démo — données fictives enregistrées dans ce navigateur.</span>
-      <select data-change="demoRole" class="btn sm" aria-label="Rôle de démonstration">${['owner', 'staff', 'teacher'].map(r => `<option value="${r}"${app.role === r ? ' selected' : ''}>Voir comme : ${{ owner: 'Admin', staff: 'Employé', teacher: 'Enseignant' }[r]}</option>`).join('')}</select>
+      <select data-change="demoRole" class="btn sm" aria-label="Rôle de démonstration">${['owner', 'staff', 'teacher'].map(r => `<option value="${r}"${app.role === r ? ' selected' : ''}>Voir comme : ${ROLE_LABEL[r]}</option>`).join('')}</select>
       <button class="btn sm" data-act="demoReset">Réinitialiser</button></div>`;
   if (!app.active) banner += `<div class="banner bad">${icon('alert')}<span>Abonnement expiré : lecture seule. Renouvelez pour continuer à travailler.</span>${app.isManager ? '<a class="btn sm" href="#/billing">Renouveler</a>' : ''}</div>`;
   else if (app.org.plan === 'trial' && left !== null && left <= 15) banner += `<div class="banner warn">${icon('clock')}<span>Essai gratuit : ${left} jour(s) restant(s).</span>${app.isManager ? '<a class="btn sm" href="#/billing">Choisir un plan</a>' : ''}</div>`;
+  const who = app.me?.full_name || app.user?.email || '';
   return `<div class="app${collapsed ? ' collapsed' : ''}" id="shell">
-    <aside class="sidebar"><div class="side-head">${brand}<button class="collapse-btn" data-act="collapse" title="Réduire / agrandir le menu" aria-label="Réduire le menu">${icon('chevL')}</button></div>${orgOpts}${centerSel}${nav(app, current)}
-      <div class="sidebar-foot">
-        <div class="me" title="${esc(app.me?.full_name || app.user?.email)} — ${esc(roleLabel)}"><span class="avatar">${esc(L.initials(app.me?.full_name || app.user?.email))}</span><div class="me-text"><div class="me-name">${esc(app.me?.full_name || app.user?.email)}</div><div class="me-role">${esc(roleLabel)} · ${esc(app.org.name)}</div></div></div>
-        <div class="foot-actions"><button class="btn sm" data-act="theme" title="Thème clair / sombre">${icon('moon')}<span>Thème</span></button><button class="btn sm" data-act="logout" title="Déconnexion">${icon('logout')}<span>Quitter</span></button></div>
-      </div>
+    <aside class="sidebar">
+      <div class="side-head">${orgLogo(app.org.name)}<div class="org-meta"><div class="org-name">${esc(app.org.name)}</div><div class="org-role">${esc(ROLE_LABEL[app.role])}</div></div></div>
+      <div class="side-scroll">${orgOpts}${centerSel}${nav(app, current)}</div>
+      <div class="side-foot"><b>${esc((cfg.APP_NAME || 'Daftar').slice(0, 1))}</b>${esc((cfg.APP_NAME || 'Daftar').slice(1))} · gestion de centre</div>
     </aside>
     <div class="main">
-      <div class="topbar"><button class="btn ghost icon" data-act="navToggle" aria-label="Menu">${icon('menu')}</button>${brand}</div>
+      <header class="topbar">
+        <button class="icon-btn" data-act="sideToggle" title="Afficher / masquer le menu" aria-label="Afficher ou masquer le menu">${icon('sidebar')}</button>
+        <button class="cmd" data-act="palette" aria-label="Rechercher">${icon('search')}<span>Rechercher un étudiant, un groupe, une page…</span><kbd>Ctrl K</kbd></button>
+        <button class="avatar" data-act="userMenu" title="${esc(who)}" aria-label="Mon compte">${esc(L.initials(who).slice(0, 1))}</button>
+      </header>
       <div class="page">${banner}${content}</div>
     </div></div>`;
+}
+
+// ---------- command palette ----------
+function openPalette() {
+  if (document.querySelector('.palette')) return;
+  const pages = navSections(app).flatMap(([sec, items]) => items.map(([k, ic, label]) => ({ kind: 'Pages', label, sub: sec, ic, href: '#/' + k })));
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="modal palette" role="dialog" aria-label="Recherche"><div class="palette-input">${icon('search')}<input placeholder="Rechercher un étudiant, un groupe, une page…" aria-label="Rechercher"><kbd class="small muted">Échap</kbd></div><div class="palette-list"></div></div>`;
+  document.body.appendChild(ov);
+  const inp = ov.querySelector('input'), list = ov.querySelector('.palette-list');
+  let items = [], sel = 0;
+  const close = () => { ov.remove(); document.removeEventListener('keydown', key, true); };
+  const go = i => { const it = items[i]; if (!it) return; close(); location.hash = it.href; };
+  const draw = () => {
+    const q = inp.value;
+    const st = q.trim() ? app.s.students.filter(s => L.matches(q, s.full_name, s.phone, s.parent_phone)).slice(0, 8)
+      .map(s => ({ kind: 'Étudiants', label: s.full_name, sub: s.phone || '', ic: 'users', href: (app.isStaff ? '#/students/' : '#/groups/') + s.id })) : [];
+    const gr = app.s.groups.filter(g => L.matches(q, g.name, app.name('teachers', g.teacher_id, ''))).slice(0, q.trim() ? 6 : 0)
+      .map(g => ({ kind: 'Groupes', label: g.name, sub: app.name('teachers', g.teacher_id, ''), ic: 'layers', href: '#/groups/' + g.id }));
+    const pg = pages.filter(p => L.matches(q, p.label, p.sub));
+    items = [...pg, ...st.filter(() => app.isStaff), ...gr];
+    sel = Math.min(sel, Math.max(0, items.length - 1));
+    let last = '';
+    list.innerHTML = items.length ? items.map((it, i) => `${it.kind !== last ? `<div class="palette-sec">${(last = it.kind)}</div>` : ''}<div class="palette-item${i === sel ? ' on' : ''}" data-i="${i}">${icon(it.ic)}<span>${esc(it.label)}</span><small>${esc(it.sub)}</small></div>`).join('')
+      : '<div class="empty">Aucun résultat</div>';
+  };
+  const key = e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(items.length - 1, sel + 1); draw(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); go(sel); }
+  };
+  document.addEventListener('keydown', key, true);
+  inp.addEventListener('input', () => { sel = 0; draw(); });
+  list.addEventListener('click', e => { const el = e.target.closest('[data-i]'); if (el) go(Number(el.dataset.i)); });
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  draw(); inp.focus();
+}
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && app.org) { e.preventDefault(); openPalette(); }
+});
+
+function userMenu(btn) {
+  const ex = document.querySelector('.menu'); if (ex) { ex.remove(); return; }
+  const m = document.createElement('div');
+  m.className = 'menu';
+  m.innerHTML = `<div class="who"><b>${esc(app.me?.full_name || '')}</b><span class="small muted">${esc(app.user?.email || '')}</span><div class="small" style="color:var(--red);font-weight:700">${esc(ROLE_LABEL[app.role])}</div></div>
+    <button data-m="theme">${icon('moon')}Thème clair / sombre</button>
+    ${app.isManager ? `<a href="#/billing">${icon('card')}Abonnement</a>` : ''}
+    <button data-m="logout" class="danger">${icon('logout')}Déconnexion</button>`;
+  document.body.appendChild(m);
+  const off = e => { if (!m.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { m.remove(); document.removeEventListener('mousedown', off); } };
+  setTimeout(() => document.addEventListener('mousedown', off), 0);
+  m.addEventListener('click', async e => {
+    const b = e.target.closest('[data-m], a'); if (!b) return;
+    m.remove();
+    if (b.dataset.m === 'theme') globalActions.theme();
+    if (b.dataset.m === 'logout') await globalActions.logout();
+  });
 }
 
 // ---------- global events ----------
 const globalActions = {
   navToggle: () => document.getElementById('shell')?.classList.toggle('nav-open'),
+  sideToggle() { if (matchMedia('(max-width: 860px)').matches) globalActions.navToggle(); else globalActions.collapse(); },
+  palette: () => openPalette(),
+  userMenu: el => userMenu(el),
   collapse() {
     const el = document.getElementById('shell'); const on = !el.classList.contains('collapsed');
     el.classList.toggle('collapsed', on);
@@ -249,9 +331,9 @@ window.addEventListener('hashchange', () => app.render());
 function authShell(inner) {
   return `<div class="auth">
     <div class="auth-side">
-      <div class="brand" style="color:inherit"><span class="brand-mark">${LOGO}</span><span class="brand-text">${esc(cfg.APP_NAME || 'Daftar')}</span></div>
-      <div><h1>Toute la gestion de votre centre, au même endroit.</h1>
-        <ul style="margin-top:24px">${['Élèves, groupes et inscriptions', 'Emploi du temps et présences', 'Factures et paiements en espèces', 'Relances WhatsApp prêtes à envoyer', 'Paie des enseignants et dépenses']
+      <div class="brand"><span class="brand-mark">${LOGO}</span><span class="brand-text">${esc(cfg.APP_NAME || 'Daftar')}</span></div>
+      <div><h1>Toute la gestion de votre centre, <em>au même endroit.</em></h1>
+        <ul style="margin-top:24px">${['Étudiants, groupes et inscriptions', 'Emploi du temps et présences', 'Factures et paiements en espèces', 'Relances WhatsApp prêtes à envoyer', 'Paie des enseignants et dépenses']
           .map(t => `<li>${icon('check')}${t}</li>`).join('')}</ul></div>
       <div class="small" style="opacity:.8">Centres de soutien scolaire, de langues et de formation au Maroc.</div>
     </div>

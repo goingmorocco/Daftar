@@ -109,7 +109,7 @@ async function waitDialog(app, w = null) {
   return modal({
     title: isNew ? 'Ajouter à la liste d\'attente' : 'Modifier la demande',
     body: `<div class="form-grid">
-      ${field('Nom de l\'élève', input('full_name', w.full_name, { required: true }), 'full')}
+      ${field('Nom de l\'étudiant', input('full_name', w.full_name, { required: true }), 'full')}
       ${field('Téléphone (WhatsApp)', input('phone', w.phone, { type: 'tel' }))}
       ${field('Nom du parent', input('parent_name', w.parent_name))}
       ${field('Niveau', select('level_id', opts(app.s.levels), w.level_id, { empty: '—' }))}
@@ -158,7 +158,7 @@ export const waitlist = {
       const s = await studentDialog(app, null, { full_name: w.full_name, phone: w.phone, parent_name: w.parent_name, parent_phone: w.phone,
         level_id: w.level_id, notes: w.notes, group_id: g?.id });
       if (!s?.id) return;
-      await app.save('ctr_waitlist', { status: 'enrolled' }, w.id); toast('Élève inscrit et retiré de la liste.'); await app.refresh('waitlist');
+      await app.save('ctr_waitlist', { status: 'enrolled' }, w.id); toast('Étudiant inscrit et retiré de la liste.'); await app.refresh('waitlist');
     },
     async openGroup(el, app) {
       const g = await groupDialog(app, null, { level_id: el.dataset.level || null, subject_id: el.dataset.subject || null,
@@ -194,7 +194,7 @@ export const team = {
           <td class="r nowrap">${self || locked ? '' : m.status === 'pending' ? `<button class="btn sm primary" data-act="approve" data-id="${m.id}">${icon('check')}Approuver</button><button class="btn sm ghost danger" data-act="remove" data-id="${m.id}">Refuser</button>`
             : m.status === 'active' ? `<button class="btn sm ghost" data-act="disable" data-id="${m.id}">Désactiver</button>` : `<button class="btn sm" data-act="approve" data-id="${m.id}">Réactiver</button><button class="btn sm ghost danger" data-act="remove" data-id="${m.id}">${icon('trash')}</button>`}</td></tr>`; }).join('')}
       </tbody></table></div></div>
-      <div class="card card-pad small muted" style="margin-top:16px"><b>Rôles :</b> Admin — tout, y compris les finances (chiffres du mois, encaissements, dépenses, paie des enseignants), les réglages et l'équipe. Employé — élèves, groupes, emploi du temps, encaissement des paiements, relances et liste d'attente, sans vue financière. Enseignant — uniquement ses groupes, son emploi du temps et les présences.</div>`;
+      <div class="card card-pad small muted" style="margin-top:16px"><b>Rôles :</b> Admin — tout, y compris les finances (chiffres du mois, encaissements, dépenses, paie des enseignants), les réglages et l'équipe. Employé — étudiants, groupes, emploi du temps, encaissement des paiements, relances et liste d'attente, sans vue financière. Enseignant — uniquement ses groupes, son emploi du temps et les présences.</div>`;
   },
   changes: {
     async role(el, app) { await app.save('ctr_members', { role: el.value }, el.dataset.id); toast('Rôle mis à jour.'); await app.refresh('members'); },

@@ -2,6 +2,7 @@
 import { esc, icon, modal, field, input, select, textarea, opts, nullIfEmpty, num, toast, emptyState, confirmBox } from '../ui.js';
 import * as L from '../logic.js';
 import { statusBadge, invBadge, invNo, groupChip, groupLabel, groupPrice, studentDialog, enrollDialog, paymentDialog, invoiceDialog, receiptDialog, METHOD, exportCsv } from './common.js';
+import * as S from './schedule.js';
 
 const today = () => L.today();
 const pageHead = (title, sub, actions = '') => `<div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div><div class="actions">${actions}</div></div>`;
@@ -27,65 +28,129 @@ function sessionLine(app, s) {
 export { sessionLine };
 
 // ---------------------------------------------------------------- Dashboard
+function opNotes(app) {
+  const t = today();
+  const overdueStudents = new Set(app.fin.invoices.filter(i => i.status === 'overdue').map(i => i.student_id)).size;
+  const todays = app.s.sessions.filter(s => s.date === t && s.status !== 'cancelled');
+  const teachersToday = new Set(todays.map(s => s.teacher_id).filter(Boolean)).size;
+  const roomsToday = new Set(todays.map(s => s.room_id).filter(Boolean)).size;
+  const active = app.s.enrollments.filter(e => e.status === 'active');
+  const soon = active.filter(e => e.end_date && e.end_date >= t && L.daysBetween(t, e.end_date) <= 7).length;
+  const expired = active.filter(e => e.end_date && e.end_date < t).length;
+  const waiting = app.s.waitlist.filter(w => w.status === 'waiting').length;
+  const alerts = L.waitlistAlerts(app.s.waitlist, app.settings.waitlist_threshold || 7).length;
+  const note = (href, ic, title, text, pill, red = false) => `<a class="note" href="${href}"><span class="note-ic${red ? ' red' : ''}">${icon(ic)}</span>
+    <div class="grow"><h3>${esc(title)}</h3><p>${text}</p></div><span class="pill${red ? ' red' : ''}">${pill}</span></a>`;
+  return [
+    note('#/reminders', 'wallet', 'Suivi des paiements', `${overdueStudents} compte(s) en retard nécessite(nt) un suivi.`, `${overdueStudents} en retard`, overdueStudents > 0),
+    note('#/schedule', 'calendar', 'Capacité du jour', `${teachersToday} enseignant(s) et ${roomsToday} salle(s) sont actifs aujourd'hui.`, `${teachersToday} enseignant(s)`),
+    note('#/students', 'heart', 'Santé des inscriptions', `Inscriptions actives : ${active.length} (bientôt expirées : ${soon}, non renouvelées : ${expired}).`, `${active.length} actives`),
+    note('#/reminders?tab=renewal', 'clock', 'Bientôt expirées', 'Inscriptions se terminant dans les 7 prochains jours.', `${soon} bientôt`, soon > 0),
+    note('#/reminders?tab=renewal', 'alert', 'Non renouvelées', "La période payée est terminée et personne ne l'a renouvelée.", `${expired} non renouvelée(s)`, expired > 0),
+    note('#/waitlist', 'hourglass', "Liste d'attente", waiting ? `${waiting} personne(s) attendent un groupe${alerts ? ` — ${alerts} groupe(s) à ouvrir` : ''}.` : "Personne n'attend de groupe.", `${waiting} en attente`, alerts > 0),
+  ];
+}
+
 export const dashboard = {
   title: 'Tableau de bord',
   allow: app => app.isStaff,
   render(app) {
-    const t = today(), ms = L.monthStart(t);
-    const students = app.s.students.filter(s => s.status === 'active' && app.inCenter(s));
-    const groups = app.s.groups.filter(g => g.active && app.inCenter(g));
-    const todays = app.s.sessions.filter(s => s.date === t && app.inCenter(app.by('groups', s.group_id) || {})).sort((a, b) => a.start_time.localeCompare(b.start_time));
-    const unpaid = app.reminders.filter(r => r.kind === 'unpaid' && !r.sent);
+    const st = app.viewState;
+    const t = today();
+    const days = [L.addDays(t, -1), t, L.addDays(t, 1)];
+    const sessions = S.filterSessions(app, app.s.sessions.filter(s => days.includes(s.date)), st);
+    const todays = sessions.filter(s => s.date === t);
+    const stats = S.sessionStats(todays);
+    const notes = opNotes(app);
     const alerts = L.waitlistAlerts(app.s.waitlist, app.settings.waitlist_threshold || 7);
     const pending = app.s.members.filter(m => m.status === 'pending');
-    // last 6 months collected
-    const months = Array.from({ length: 6 }, (_, i) => L.addMonths(ms, i - 5));
-    const coll = months.map(m => app.s.payments.filter(p => p.paid_at >= m && p.paid_at <= L.monthEnd(m)).reduce((s, p) => s + Number(p.amount), 0));
-    const max = Math.max(1, ...coll);
-    const enrolled = new Map();
-    for (const e of app.s.enrollments) if (e.status === 'active') enrolled.set(e.group_id, (enrolled.get(e.group_id) || 0) + 1);
-    const cap = groups.reduce((s, g) => s + (g.capacity || 0), 0), seats = groups.reduce((s, g) => s + (g.capacity ? Math.min(enrolled.get(g.id) || 0, g.capacity) : 0), 0);
     const first = (app.me?.full_name || '').split(' ')[0];
-    const att = (app.s.attendanceRecent || []);
-    return `${pageHead(`Bonjour${first ? ' ' + first : ''}`, `${L.DAYS[L.isoWeekday(t)]} ${L.fmtDate(t)} — ${esc(L.monthLabel(t))}`,
-      `<button class="btn" data-act="newPayment">${icon('wallet')}Encaisser</button><button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel élève</button>`)}
-      ${alerts.map(a => `<div class="banner warn">${icon('alert')}<span>${a.count} demandes en attente pour ${esc(app.name('levels', a.level_id, 'tout niveau'))} · ${esc(app.name('subjects', a.subject_id, 'toute matière'))} — de quoi ouvrir un groupe.</span><a class="btn sm" href="#/waitlist">Voir</a></div>`).join('')}
+    // people of the day
+    const byTeacher = new Map();
+    for (const s of app.s.sessions.filter(x => x.date === t && x.status !== 'cancelled')) (byTeacher.get(s.teacher_id) || byTeacher.set(s.teacher_id, []).get(s.teacher_id)).push(s);
+    const expected = new Set(app.s.enrollments.filter(e => e.status === 'active' && app.s.sessions.some(s => s.date === t && s.group_id === e.group_id && s.status !== 'cancelled')).map(e => e.student_id)).size;
+    return `${pageHead(`Bonjour${first ? ' ' + first : ''}`, `${L.DAYS[L.isoWeekday(t)]} ${L.fmtDate(t)} · <span class="c-red">${stats.today} séance(s) aujourd'hui</span>`,
+      `<button class="btn" data-act="newPayment">${icon('wallet')}Encaisser</button><button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel étudiant</button>`)}
+      ${alerts.map(a => `<div class="banner warn">${icon('hourglass')}<span>${a.count} demandes en attente pour ${esc(app.name('levels', a.level_id, 'tout niveau'))} · ${esc(app.name('subjects', a.subject_id, 'toute matière'))} — de quoi ouvrir un groupe.</span><a class="btn sm" href="#/waitlist">Voir</a></div>`).join('')}
       ${pending.length && app.isManager ? `<div class="banner info">${icon('team')}<span>${pending.length} demande(s) d'accès à approuver.</span><a class="btn sm" href="#/team">Approuver</a></div>` : ''}
-      ${app.isManager ? moneyKpis(app, ms, L.monthEnd(ms)) : `<div class="kpis k4">${kpi('Élèves actifs', String(students.length))}${kpi("Séances aujourd'hui", String(todays.length))}${kpi('Relances à envoyer', String(unpaid.length), unpaid.length ? 'bad' : '')}${kpi("Liste d'attente", String(app.s.waitlist.filter(w => w.status === 'waiting').length))}</div>`}
-      <div class="grid grid-2">
-        <div class="card"><div class="card-head"><h2>Séances du jour</h2><a href="#/schedule" class="small">Emploi du temps →</a></div>
-          <div class="list">${todays.length ? todays.map(s => sessionLine(app, s)).join('') : emptyState('Aucune séance aujourd\'hui', 'Les séances se créent à partir des horaires de chaque groupe.', '', 'calendar')}</div></div>
-        <div class="card"><div class="card-head"><h2>Relances du jour</h2><a href="#/reminders" class="small">Tout voir →</a></div>
-          <div class="list">${unpaid.slice(0, 6).map(r => `<div class="list-item"><div class="grow"><div class="cell-main">${esc(r.student.full_name)}</div><div class="cell-sub">${esc(r.group?.name || r.invoice?.description || '')} · ${r.days} j de retard</div></div>
-            <b class="num">${app.money(r.invoice.remaining)}</b>${r.phone ? `<a class="btn sm wa" target="_blank" rel="noopener" href="${L.waLink(r.phone, r.text)}" data-act="logReminder" data-key="${esc(r.key)}">${icon('wa')}</a>` : ''}</div>`).join('')
-            || emptyState('Rien à relancer', 'Tous les paiements sont à jour.', '', 'check')}</div></div>
-        ${app.isManager ? `<div class="card"><div class="card-head"><h2>Encaissements — 6 derniers mois</h2></div>
-          <div class="card-pad"><div class="bars">${months.map((m, i) => `<div class="bar-col"><span class="val">${coll[i] ? Math.round(coll[i] / 100) / 10 + 'k' : ''}</span><div class="bar" style="height:${Math.round(coll[i] / max * 100)}%" title="${esc(app.money(coll[i]))}"></div><span class="lbl">${esc(L.MONTHS_SHORT[L.parse(m).getMonth()])}</span></div>`).join('')}</div></div></div>` : ''}
-        <div class="card"><div class="card-head"><h2>Votre centre</h2></div>
-          <div class="list">
-            <div class="list-item"><div class="grow">Élèves actifs</div><b class="num">${students.length}</b></div>
-            <div class="list-item"><div class="grow">Groupes actifs</div><b class="num">${groups.length}</b></div>
-            <div class="list-item"><div class="grow">Remplissage des groupes</div><b class="num">${cap ? Math.round(seats / cap * 100) + ' %' : '—'}</b></div>
-            <div class="list-item"><div class="grow">Liste d'attente</div><b class="num">${app.s.waitlist.filter(w => w.status === 'waiting').length}</b></div>
-            <div class="list-item"><div class="grow">Enseignants</div><b class="num">${app.s.teachers.filter(t => t.active).length}</b></div>
-          </div></div>
-      </div>${att ? '' : ''}`;
+      <div class="grid dash" style="grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr);align-items:start">
+        <div class="card"><div class="card-head"><h2>${icon('calendar')}Programme du jour</h2><span class="pill">${stats.today} aujourd'hui · <span class="c-red">${stats.live} en direct</span>${stats.range ? ' · ' + stats.range : ''}</span></div>
+          <div class="toolbar"><div class="search">${icon('search')}<input data-input="q" placeholder="Rechercher un groupe, un enseignant…" value="${esc(st.q || '')}"></div>
+            ${select('teacher', opts(app.s.teachers, 'full_name'), st.teacher || '', { empty: 'Enseignant' }).replace('<select', '<select data-change="filter"')}
+            ${select('status', [{ value: 'scheduled', label: 'Prévue' }, { value: 'live', label: 'En direct' }, { value: 'done', label: 'Terminée' }, { value: 'cancelled', label: 'Annulée' }], st.status || '', { empty: 'Statut' }).replace('<select', '<select data-change="filter"')}</div>
+          ${S.timeGrid(app, days, sessions, { labels: ['Hier', "Aujourd'hui", 'Demain'] })}</div>
+        <div class="grid" style="gap:20px">
+          <div class="card"><div class="card-head"><h2>${icon('bell')}Notes opérationnelles</h2><span class="pill">${notes.length} notes</span></div>${notes.join('')}</div>
+          <div class="card"><div class="card-head"><h2>${icon('team')}Personnes du jour</h2><span class="pill">${expected} étudiant(s) attendu(s)</span></div>
+            <div class="list">${[...byTeacher.entries()].map(([tid, l]) => `<div class="list-item"><span class="avatar" style="width:38px;height:38px;cursor:default">${esc(L.initials(app.name('teachers', tid, '?')).slice(0, 1))}</span>
+              <div class="grow"><div class="cell-main">${esc(app.name('teachers', tid, 'Sans enseignant'))}</div><div class="cell-sub">${l.sort((a, b) => a.start_time.localeCompare(b.start_time)).map(s => `${L.fmtTime(s.start_time)} ${esc(app.name('groups', s.group_id))}`).join(' · ')}</div></div>
+              <span class="pill blue">${l.length} séance(s)</span></div>`).join('') || '<div class="card-pad muted small">Aucun cours aujourd\'hui.</div>'}</div></div>
+        </div></div>`;
   },
+  inputs: { q(el, app) { app.viewState.q = el.value; app.rerender(); } },
+  changes: { filter(el, app) { app.viewState[el.name] = el.value; app.render(); } },
   actions: {
     newStudent: async (el, app) => { const s = await studentDialog(app); if (s?.id) app.go('#/students/' + s.id); },
     async newPayment(el, app) {
-      const st = await pickStudent(app, 'Encaisser — choisir l\'élève', s => app.fin.byStudent.get(s.id)?.some(i => i.remaining > 0));
+      const st = await pickStudent(app, 'Encaisser — choisir l\'étudiant', s => app.fin.byStudent.get(s.id)?.some(i => i.remaining > 0));
       if (st) await paymentDialog(app, { student: st });
     },
-    attendance: (el, app) => import('./schedule.js').then(m => m.attendanceDialog(app, el.dataset.id)),
-    logReminder: (el, app) => import('./money.js').then(m => m.logReminder(app, el.dataset.key, el)),
+    openSession: (el, app) => S.attendanceDialog(app, el.dataset.id),
+    attendance: (el, app) => S.attendanceDialog(app, el.dataset.id),
+  },
+};
+
+// ---------------------------------------------------------------- Monthly report (admin)
+export const report = {
+  title: 'Bilan mensuel',
+  allow: app => app.isManager,
+  render(app) {
+    const st = app.viewState; st.month ||= L.monthStart(today());
+    const ms = st.month, me = L.monthEnd(ms);
+    const months = Array.from({ length: 6 }, (_, i) => L.addMonths(ms, i - 5));
+    const coll = months.map(m => app.s.payments.filter(p => p.paid_at >= m && p.paid_at <= L.monthEnd(m)).reduce((s, p) => s + Number(p.amount), 0));
+    const max = Math.max(1, ...coll);
+    // by group
+    const enrGroup = new Map(app.s.enrollments.map(e => [e.id, e.group_id]));
+    const invMonth = app.fin.invoices.filter(i => !i.cancelled && String(i.period_month || i.due_date).slice(0, 10) >= ms && String(i.period_month || i.due_date).slice(0, 10) <= me);
+    const byGroup = new Map();
+    for (const i of invMonth) { const g = enrGroup.get(i.enrollment_id) || '_'; const r = byGroup.get(g) || { billed: 0, paid: 0, n: 0 }; r.billed += Number(i.amount); r.paid += i.paid; r.n++; byGroup.set(g, r); }
+    const rows = [...byGroup.entries()].sort((a, b) => b[1].billed - a[1].billed);
+    const pays = app.s.payments.filter(p => p.paid_at >= ms && p.paid_at <= me);
+    const byMethod = Object.entries(METHOD).map(([m, l]) => [l, pays.filter(p => p.method === m).reduce((s, p) => s + Number(p.amount), 0)]).filter(x => x[1]);
+    const exp = app.s.expenses.filter(e => e.spent_at >= ms && e.spent_at <= me);
+    const byCat = new Map(); for (const e of exp) byCat.set(e.category, (byCat.get(e.category) || 0) + Number(e.amount));
+    const payroll = app.s.payouts.filter(p => p.status === 'paid' && p.paid_at >= ms && p.paid_at <= me).reduce((s, p) => s + Number(p.amount), 0);
+    if (payroll) byCat.set('Paie des enseignants', payroll);
+    const line = (l, v, total) => `<div class="list-item"><div class="grow">${esc(l)}<div class="progress" style="margin-top:6px"><span style="width:${Math.round(v / (total || 1) * 100)}%"></span></div></div><b class="num">${app.money(v)}</b></div>`;
+    const totalPay = byMethod.reduce((s, x) => s + x[1], 0), totalExp = [...byCat.values()].reduce((a, b) => a + b, 0);
+    return `${pageHead('Bilan mensuel', 'Ce qui est facturé, encaissé, dépensé — et ce qu\'il reste.',
+      `<div class="seg"><button data-act="prevMonth" aria-label="Mois précédent">${icon('chevL')}</button><button data-act="thisMonth" class="on" style="min-width:150px">${esc(L.monthLabel(ms))}</button><button data-act="nextMonth" aria-label="Mois suivant">${icon('chevR')}</button></div>`)}
+      ${moneyKpis(app, ms, me)}
+      <div class="grid grid-2">
+        <div class="card"><div class="card-head"><h2>${icon('chart')}Encaissements — 6 mois</h2></div>
+          <div class="card-pad"><div class="bars">${months.map((m, i) => `<div class="bar-col"><span class="val">${coll[i] ? (Math.round(coll[i] / 100) / 10) + 'k' : ''}</span><div class="bar" style="height:${Math.round(coll[i] / max * 100)}%" title="${esc(app.money(coll[i]))}"></div><span class="lbl">${esc(L.MONTHS_SHORT[L.parse(m).getMonth()])}</span></div>`).join('')}</div></div></div>
+        <div class="card"><div class="card-head"><h2>${icon('wallet')}Encaissé par mode</h2><b class="num">${app.money(totalPay)}</b></div>
+          <div class="list">${byMethod.map(([l, v]) => line(l, v, totalPay)).join('') || '<div class="card-pad muted small">Aucun encaissement ce mois-ci.</div>'}</div></div>
+        <div class="card"><div class="card-head"><h2>${icon('receipt')}Dépenses</h2><b class="num">${app.money(totalExp)}</b></div>
+          <div class="list">${[...byCat.entries()].sort((a, b) => b[1] - a[1]).map(([c, v]) => line(c, v, totalExp)).join('') || '<div class="card-pad muted small">Aucune dépense ce mois-ci.</div>'}</div></div>
+        <div class="card" style="grid-column:1/-1"><div class="card-head"><h2>${icon('layers')}Par groupe</h2></div>
+          ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="r">Facturé</th><th class="r">Encaissé</th><th class="r">Taux</th></tr></thead><tbody>
+          ${rows.map(([gid, r]) => `<tr><td>${gid === '_' ? '<span class="muted">Factures ponctuelles</span>' : groupChip(app, app.by('groups', gid))}</td><td class="r num">${app.money(r.billed)}</td><td class="r num">${app.money(r.paid)}</td>
+            <td class="r num ${r.paid < r.billed ? 'c-red' : ''}">${r.billed ? Math.round(r.paid / r.billed * 100) : 0} %</td></tr>`).join('')}</tbody></table></div>` : '<div class="card-pad muted small">Aucune facture ce mois-ci.</div>'}</div>
+      </div>`;
+  },
+  actions: {
+    prevMonth(el, app) { app.viewState.month = L.addMonths(app.viewState.month, -1); app.render(); },
+    nextMonth(el, app) { app.viewState.month = L.addMonths(app.viewState.month, 1); app.render(); },
+    thisMonth(el, app) { app.viewState.month = L.monthStart(today()); app.render(); },
   },
 };
 
 export async function pickStudent(app, title, filter = () => true) {
   const list = app.s.students.filter(s => s.status === 'active' && filter(s));
-  if (!list.length) { toast('Aucun élève concerné.', 'err'); return null; }
-  const id = await modal({ title, body: field('Élève', select('student_id', opts(list.sort((a, b) => a.full_name.localeCompare(b.full_name)), s => `${s.full_name}${s.phone ? ' · ' + s.phone : ''}`), '', { empty: 'Choisir…', required: true })),
+  if (!list.length) { toast('Aucun étudiant concerné.', 'err'); return null; }
+  const id = await modal({ title, body: field('Étudiant', select('student_id', opts(list.sort((a, b) => a.full_name.localeCompare(b.full_name)), s => `${s.full_name}${s.phone ? ' · ' + s.phone : ''}`), '', { empty: 'Choisir…', required: true })),
     submit: 'Continuer', onSubmit: d => d.student_id });
   return id ? app.by('students', id) : null;
 }
@@ -97,7 +162,7 @@ function studentRows(app) {
   for (const e of app.s.enrollments) if (e.status === 'active') { (enrBy.get(e.student_id) || enrBy.set(e.student_id, []).get(e.student_id)).push(e); }
   return app.s.students.filter(s => {
     if (!app.inCenter(s)) return false;
-    if ((st.status || 'active') !== 'all' && s.status !== (st.status || 'active')) return false;
+    if (s.status !== (st.status || 'active')) return false;
     if (st.group && !(enrBy.get(s.id) || []).some(e => e.group_id === st.group)) return false;
     if (st.pay && app.studentStatus.get(s.id) !== st.pay) return false;
     const gnames = (enrBy.get(s.id) || []).map(e => app.name('groups', e.group_id));
@@ -106,31 +171,40 @@ function studentRows(app) {
 }
 
 export const students = {
-  title: 'Élèves',
+  title: 'Étudiants',
   allow: app => app.isStaff,
   render(app, r) {
     if (r.id) return studentDetail(app, r.id, r.q.tab || 'enrollments');
     const st = app.viewState;
+    const alumni = r.name === 'alumni';
+    if (alumni) st.status = 'inactive';
     const rows = studentRows(app);
     const due = id => (app.fin.byStudent.get(id) || []).reduce((s, i) => s + i.remaining, 0);
     const lim = L.planLimits(app.org);
     const active = app.s.students.filter(s => s.status === 'active').length;
-    return `${pageHead('Élèves', `${active} actif(s)${lim.students ? ` sur ${lim.students} inclus dans votre plan` : ''}`,
-      `<button class="btn" data-act="exportCsv">${icon('download')}Exporter</button><button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel élève</button>`)}
+    if (alumni) return `${pageHead('Étudiants sortis', `${rows.length} étudiant(s) parti(s) — leur historique reste consultable. Ouvrez une fiche puis « Modifier » pour réactiver.`)}
+      <div class="card"><div class="toolbar"><div class="search">${icon('search')}<input data-input="q" placeholder="Rechercher un nom, un téléphone…" value="${esc(st.q || '')}"></div></div>
+      ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Étudiant</th><th class="hide-sm">Dernier groupe</th><th>Paiement</th><th class="r">Reste dû</th></tr></thead><tbody>
+        ${rows.map(({ s }) => { const last = app.s.enrollments.filter(e => e.student_id === s.id).sort((a, b) => String(b.start_date).localeCompare(String(a.start_date)))[0];
+          return `<tr class="click" data-act="open" data-id="${s.id}"><td><div class="cell-main">${esc(s.full_name)}</div><div class="cell-sub">${esc(s.parent_phone || s.phone || '')}</div></td>
+          <td class="hide-sm">${last ? groupChip(app, app.by('groups', last.group_id)) : '—'}</td><td>${statusBadge(app.studentStatus.get(s.id))}</td><td class="r num">${due(s.id) ? `<span class="c-red">${app.money(due(s.id))}</span>` : '—'}</td></tr>`; }).join('')}
+      </tbody></table></div>` : emptyState('Aucun étudiant sorti', 'Les étudiants passés en « Inactif » apparaissent ici.', '', 'userOut')}</div>`;
+    return `${pageHead('Étudiants', `${active} actif(s)${lim.students ? ` sur ${lim.students} inclus dans votre plan` : ''}`,
+      `<button class="btn" data-act="exportCsv">${icon('download')}Exporter</button><button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel étudiant</button>`)}
       <div class="card">
         <div class="toolbar">
           <div class="search">${icon('search')}<input data-input="q" placeholder="Rechercher un nom, un téléphone, un groupe…" value="${esc(st.q || '')}"></div>
           ${select('group', opts(app.s.groups.filter(g => app.inCenter(g))), st.group || '', { empty: 'Tous les groupes' }).replace('<select', '<select data-change="filter"')}
           ${select('pay', [{ value: 'overdue', label: 'En retard' }, { value: 'partial', label: 'Partiel' }, { value: 'pending', label: 'En attente' }, { value: 'paid', label: 'À jour' }, { value: 'none', label: 'Sans facture' }], st.pay || '', { empty: 'Tous les paiements' }).replace('<select', '<select data-change="filter"')}
-          ${select('status', [{ value: 'active', label: 'Actifs' }, { value: 'inactive', label: 'Inactifs' }, { value: 'all', label: 'Tous' }], st.status || 'active').replace('<select', '<select data-change="filter"')}
+
         </div>
-        ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Élève</th><th class="hide-sm">Groupes</th><th>Paiement</th><th class="r">Reste dû</th></tr></thead><tbody>
+        ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Étudiant</th><th class="hide-sm">Groupes</th><th>Paiement</th><th class="r">Reste dû</th></tr></thead><tbody>
           ${rows.map(({ s, enr }) => `<tr class="click" data-act="open" data-id="${s.id}">
             <td><div class="cell-main">${esc(s.full_name)}</div><div class="cell-sub">${esc(s.parent_phone || s.phone || '')}${s.parent_name ? ' · ' + esc(s.parent_name) : ''}</div></td>
             <td class="hide-sm"><div class="chips">${enr.map(e => groupChip(app, app.by('groups', e.group_id))).join('') || '<span class="muted small">Aucun groupe</span>'}</div></td>
             <td>${statusBadge(app.studentStatus.get(s.id))}</td>
             <td class="r num">${due(s.id) ? app.money(due(s.id)) : '—'}</td></tr>`).join('')}
-        </tbody></table></div>` : emptyState(app.s.students.length ? 'Aucun résultat' : 'Aucun élève pour l\'instant', app.s.students.length ? 'Modifiez la recherche ou les filtres.' : 'Ajoutez votre premier élève et inscrivez-le à un groupe.', app.s.students.length ? '' : `<button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel élève</button>`, 'users')}
+        </tbody></table></div>` : emptyState(app.s.students.length ? 'Aucun résultat' : 'Aucun étudiant pour l\'instant', app.s.students.length ? 'Modifiez la recherche ou les filtres.' : 'Ajoutez votre premier étudiant et inscrivez-le à un groupe.', app.s.students.length ? '' : `<button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel étudiant</button>`, 'users')}
       </div>`;
   },
   inputs: { q(el, app) { app.viewState.q = el.value; app.rerender(); } },
@@ -166,8 +240,8 @@ export const students = {
       await app.del('ctr_payments', el.dataset.id); toast('Paiement supprimé.'); await app.refresh('payments');
     },
     async deleteStudent(el, app) {
-      if (!(await confirmBox('Supprimer définitivement cet élève, ses inscriptions, factures et paiements ? Préférez « Inactif » pour garder l\'historique.', { ok: 'Supprimer' }))) return;
-      await app.del('ctr_students', el.dataset.id); toast('Élève supprimé.'); await app.refresh(); app.go('#/students');
+      if (!(await confirmBox('Supprimer définitivement cet étudiant, ses inscriptions, factures et paiements ? Préférez « Inactif » pour garder l\'historique.', { ok: 'Supprimer' }))) return;
+      await app.del('ctr_students', el.dataset.id); toast('Étudiant supprimé.'); await app.refresh(); app.go('#/students');
     },
     tab: (el, app) => app.go(`#/students/${el.dataset.id}?tab=${el.dataset.tab}`),
   },
@@ -189,9 +263,11 @@ export const students = {
   },
 };
 
+export const alumni = { ...students, title: 'Étudiants sortis' };
+
 function studentDetail(app, id, tab) {
   const s = app.by('students', id);
-  if (!s) return emptyState('Élève introuvable', '', '<a class="btn" href="#/students">Retour</a>');
+  if (!s) return emptyState('Étudiant introuvable', '', '<a class="btn" href="#/students">Retour</a>');
   const enr = app.s.enrollments.filter(e => e.student_id === id).sort((a, b) => (a.status === 'active' ? -1 : 1) - (b.status === 'active' ? -1 : 1));
   const invs = (app.fin.byStudent.get(id) || []).slice().sort((a, b) => String(b.due_date).localeCompare(String(a.due_date)));
   const pays = app.s.payments.filter(p => p.student_id === id).sort((a, b) => b.paid_at.localeCompare(a.paid_at));
@@ -221,12 +297,12 @@ function studentDetail(app, id, tab) {
     body = '<div id="att-box"><div class="card-pad muted">Chargement…</div></div>';
   } else {
     const row = (k, v) => `<div class="list-item"><div class="grow muted">${k}</div><div>${v || '—'}</div></div>`;
-    body = `<div class="list">${row('Téléphone élève', esc(s.phone))}${row('Parent', esc(s.parent_name))}${row('Téléphone parent', esc(s.parent_phone))}
+    body = `<div class="list">${row('Téléphone étudiant', esc(s.phone))}${row('Parent', esc(s.parent_name))}${row('Téléphone parent', esc(s.parent_phone))}
       ${row('Niveau', esc(app.name('levels', s.level_id, '')))}${row('Établissement', esc(s.school))}${row('Site', esc(app.name('centers', s.center_id, '')))}
       ${row('Inscrit le', L.fmtDate(String(s.created_at).slice(0, 10)))}${row('Notes', esc(s.notes))}</div>
-      <div class="card-pad" style="border-top:1px solid var(--border)"><button class="btn danger sm" data-act="deleteStudent" data-id="${id}">${icon('trash')}Supprimer l'élève</button></div>`;
+      <div class="card-pad" style="border-top:1px solid var(--border)"><button class="btn danger sm" data-act="deleteStudent" data-id="${id}">${icon('trash')}Supprimer l'étudiant</button></div>`;
   }
-  return `<div class="small" style="margin-bottom:8px"><a href="#/students">← Élèves</a></div>
+  return `<div class="small" style="margin-bottom:8px"><a href="#/students">← Étudiants</a></div>
     ${pageHead(s.full_name, `${statusBadge(app.studentStatus.get(id))} ${s.status === 'inactive' ? '<span class="badge b-cancelled">Inactif</span>' : ''} ${due ? `· Reste dû : <b>${app.money(due)}</b>` : ''}`,
       `${phone ? `<a class="btn wa" href="${L.waLink(phone, `Bonjour ${s.parent_name || s.full_name}, `)}" target="_blank" rel="noopener">${icon('wa')}WhatsApp</a>` : ''}
        <button class="btn" data-act="edit" data-id="${id}">${icon('edit')}Modifier</button>
@@ -322,7 +398,7 @@ export const groups = {
     return `${pageHead(app.isTeacher ? 'Mes groupes' : 'Groupes', `${app.s.groups.filter(g => g.active).length} groupe(s) actif(s)`, app.isStaff ? `<button class="btn primary" data-act="newGroup">${icon('plus')}Nouveau groupe</button>` : '')}
       <div class="card"><div class="toolbar"><div class="search">${icon('search')}<input data-input="q" placeholder="Rechercher un groupe, un enseignant…" value="${esc(st.q || '')}"></div>
         <label class="check"><input type="checkbox" data-change="showAll"${st.showAll ? ' checked' : ''}> Afficher les groupes archivés</label></div>
-      ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th class="hide-sm">Horaires</th><th>Élèves</th>${app.isStaff ? '<th class="r">Mensualité</th>' : ''}</tr></thead><tbody>
+      ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th class="hide-sm">Horaires</th><th>Étudiants</th>${app.isStaff ? '<th class="r">Mensualité</th>' : ''}</tr></thead><tbody>
         ${list.map(g => { const n = count.get(g.id) || 0; const pct = g.capacity ? Math.min(100, Math.round(n / g.capacity * 100)) : 0; return `<tr class="click" data-act="open" data-id="${g.id}">
           <td>${groupChip(app, g)}${g.active ? '' : ' <span class="badge b-cancelled">Archivé</span>'}<div class="cell-sub">${esc([app.name('levels', g.level_id, ''), app.name('subjects', g.subject_id, ''), app.name('rooms', g.room_id, '')].filter(Boolean).join(' · '))}</div></td>
           <td class="hide-sm">${esc(app.name('teachers', g.teacher_id))}</td>
@@ -361,15 +437,15 @@ function groupDetail(app, id) {
     ${s.status === 'done' ? '<span class="badge b-paid">Fait</span>' : s.status === 'cancelled' ? '<span class="badge b-cancelled">Annulée</span>' : ''}<button class="btn sm" data-act="attendance" data-id="${s.id}">Présences</button></div>`;
   return `<div class="small" style="margin-bottom:8px"><a href="#/groups">← Groupes</a></div>
     ${pageHead(g.name, esc([app.name('levels', g.level_id, ''), app.name('subjects', g.subject_id, ''), app.name('teachers', g.teacher_id, ''), app.name('rooms', g.room_id, '')].filter(Boolean).join(' · ')),
-      app.isStaff ? `<button class="btn" data-act="edit" data-id="${id}">${icon('edit')}Modifier</button><button class="btn" data-act="addStudent" data-id="${id}">${icon('plus')}Nouvel élève</button><button class="btn primary" data-act="enroll" data-id="${id}">${icon('users')}Inscrire un élève</button>` : '')}
-    <div class="kpis k4">${kpi('Élèves', `${roster.length}${g.capacity ? `<small>/ ${g.capacity}</small>` : ''}`)}${kpi('Horaires', `<span style="font-size:13px">${esc(slotSummary(app, id) || 'À définir')}</span>`)}
+      app.isStaff ? `<button class="btn" data-act="edit" data-id="${id}">${icon('edit')}Modifier</button><button class="btn" data-act="addStudent" data-id="${id}">${icon('plus')}Nouvel étudiant</button><button class="btn primary" data-act="enroll" data-id="${id}">${icon('users')}Inscrire un étudiant</button>` : '')}
+    <div class="kpis k4">${kpi('Étudiants', `${roster.length}${g.capacity ? `<small>/ ${g.capacity}</small>` : ''}`)}${kpi('Horaires', `<span style="font-size:13px">${esc(slotSummary(app, id) || 'À définir')}</span>`)}
       ${app.isStaff ? kpi('Mensualité', `${L.money(groupPrice(app, g), '').trim()}<small>${esc(app.cur)}</small>`) : kpi('Début', L.fmtDate(g.start_date))}
       ${app.isStaff ? kpi('Impayés du groupe', String(roster.filter(x => ['overdue', 'partial'].includes(app.studentStatus.get(x.s.id))).length), 'bad') : kpi('Fin', g.end_date ? L.fmtDate(g.end_date) : '—')}</div>
     <div class="grid grid-2" style="grid-template-columns:1.4fr 1fr">
-      <div class="card"><div class="card-head"><h2>Élèves inscrits</h2></div>
+      <div class="card"><div class="card-head"><h2>Étudiants inscrits</h2></div>
         ${roster.length ? `<div class="table-wrap"><table class="t"><tbody>${roster.map(({ s, e }) => `<tr class="${app.isStaff ? 'click' : ''}" data-act="student" data-id="${s.id}"><td><div class="cell-main">${esc(s.full_name)}</div><div class="cell-sub">${esc(s.parent_phone || s.phone || '')}</div></td>
           <td class="small muted hide-sm">depuis ${L.fmtDate(e.start_date)}</td>${app.isStaff ? `<td class="r">${statusBadge(app.studentStatus.get(s.id))}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
-          : emptyState('Aucun élève inscrit', '', app.isStaff ? `<button class="btn primary" data-act="enroll" data-id="${id}">${icon('plus')}Inscrire un élève</button>` : '', 'users')}</div>
+          : emptyState('Aucun étudiant inscrit', '', app.isStaff ? `<button class="btn primary" data-act="enroll" data-id="${id}">${icon('plus')}Inscrire un étudiant</button>` : '', 'users')}</div>
       <div class="grid" style="align-content:start">
         <div class="card"><div class="card-head"><h2>Prochaines séances</h2></div><div class="list">${next.map(sessRow).join('') || emptyState('Aucune séance prévue', app.isStaff ? 'Ajoutez des créneaux dans « Modifier ».' : '', '', 'calendar')}</div></div>
         <div class="card"><div class="card-head"><h2>Séances passées</h2></div><div class="list">${recent.map(sessRow).join('') || '<div class="card-pad muted small">Aucune pour l\'instant.</div>'}</div></div>

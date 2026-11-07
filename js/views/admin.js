@@ -4,7 +4,7 @@ import * as L from '../logic.js';
 import { pageHead, kpi } from './core.js';
 
 const TABS = [['centre', 'Centre'], ['sites', 'Sites'], ['catalog', 'Niveaux & matières'], ['rooms', 'Salles'], ['prices', 'Prix'], ['messages', 'Messages WhatsApp']];
-const VARS = { parent: 'Nom du parent', eleve: "Nom de l'élève", groupe: 'Groupe', mois: 'Mois facturé', montant: 'Montant de la facture', reste: 'Reste à payer', date: 'Échéance / date de fin', centre: 'Nom du centre' };
+const VARS = { parent: 'Nom du parent', eleve: "Nom de l'étudiant", groupe: 'Groupe', mois: 'Mois facturé', montant: 'Montant de la facture', reste: 'Reste à payer', date: 'Échéance / date de fin', centre: 'Nom du centre' };
 
 function listEditor(app, table, rows, label, extra = () => '') {
   return `<div class="card"><div class="list">
@@ -120,7 +120,7 @@ export const settings = {
         } });
     },
     async remove(el, app) {
-      if (!(await confirmBox('Supprimer cet élément ? Les groupes et élèves qui l\'utilisent le perdront.', { ok: 'Supprimer' }))) return;
+      if (!(await confirmBox('Supprimer cet élément ? Les groupes et étudiants qui l\'utilisent le perdront.', { ok: 'Supprimer' }))) return;
       const key = el.dataset.table.replace('ctr_', '');
       await app.del(el.dataset.table, el.dataset.id); toast('Supprimé.'); await app.refresh(key, 'prices');
     },
@@ -152,12 +152,12 @@ export const billing = {
     return `${pageHead('Abonnement', 'Un abonnement mensuel par centre, sans engagement.')}
       <div class="kpis k4">${kpi('Plan', esc(L.PLANS[o.plan]?.label || o.plan))}
         ${kpi(o.plan === 'trial' ? "Fin de l'essai" : 'Valable jusqu\'au', o.plan_ends_at ? `${L.fmtDate(String(o.plan_ends_at).slice(0, 10))}<small>${left > 0 ? left + ' j' : 'expiré'}</small>` : 'Illimité', left !== null && left <= 3 ? 'bad' : '')}
-        ${kpi('Élèves actifs', `${students}<small>${lim.students ? '/ ' + lim.students : ''}</small>`, lim.students && students >= lim.students ? 'bad' : '')}
+        ${kpi('Étudiants actifs', `${students}<small>${lim.students ? '/ ' + lim.students : ''}</small>`, lim.students && students >= lim.students ? 'bad' : '')}
         ${kpi('Sites', `${centers}<small>${lim.centers ? '/ ' + lim.centers : ''}</small>`)}</div>
       <div class="plan-cards">
-        ${card('starter', 'Pour les centres à site unique qui démarrent.', ["Jusqu'à 150 élèves, 1 site", 'Toutes les fonctionnalités', 'Relances WhatsApp', 'Paie des enseignants et dépenses'])}
-        ${card('growth', 'Pour les centres en croissance, plusieurs groupes et équipes.', ["Jusqu'à 500 élèves, 3 sites", 'Tout Starter', 'Plusieurs sites sur un compte', 'Support prioritaire'])}
-        ${card('enterprise', 'Pour les réseaux et franchises.', ['Élèves et sites sur mesure', 'Tout Growth', 'Accompagnement dédié', 'Contrat sur mesure'])}</div>
+        ${card('starter', 'Pour les centres à site unique qui démarrent.', ["Jusqu'à 150 étudiants, 1 site", 'Toutes les fonctionnalités', 'Relances WhatsApp', 'Paie des enseignants et dépenses'])}
+        ${card('growth', 'Pour les centres en croissance, plusieurs groupes et équipes.', ["Jusqu'à 500 étudiants, 3 sites", 'Tout Starter', 'Plusieurs sites sur un compte', 'Support prioritaire'])}
+        ${card('enterprise', 'Pour les réseaux et franchises.', ['Étudiants et sites sur mesure', 'Tout Growth', 'Accompagnement dédié', 'Contrat sur mesure'])}</div>
       <p class="small muted" style="margin-top:14px">Paiement par virement ou en espèces. L'activation est faite par notre équipe dès réception — vos données sont conservées, même après la fin de l'essai.</p>`;
   },
 };
@@ -173,7 +173,7 @@ export const admin = {
     const mrr = active.reduce((s, o) => s + (L.PLANS[o.plan]?.price || 0), 0);
     return `${pageHead('Plateforme', 'Tous les centres, leurs plans et leur utilisation.', `<button class="btn" data-act="reload">${icon('refresh')}Actualiser</button>`)}
       <div class="kpis k4">${kpi('Centres', String(rows.length))}${kpi('Actifs', String(active.length), 'ok')}${kpi('En essai', String(rows.filter(o => o.plan === 'trial' && L.planActive(o)).length))}${kpi('Revenu mensuel', `${mrr}<small>DH</small>`)}</div>
-      <div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>Centre</th><th>Plan</th><th>Fin</th><th class="r">Élèves</th><th class="r">Sites</th><th></th></tr></thead><tbody>
+      <div class="card"><div class="table-wrap"><table class="t"><thead><tr><th>Centre</th><th>Plan</th><th>Fin</th><th class="r">Étudiants</th><th class="r">Sites</th><th></th></tr></thead><tbody>
         ${rows.map(o => `<tr><td><div class="cell-main">${esc(o.name)}</div><div class="cell-sub">${esc([o.city, o.owner_email, o.phone].filter(Boolean).join(' · '))}</div></td>
           <td>${esc(L.PLANS[o.plan]?.label || o.plan)}</td><td class="nowrap">${o.plan_ends_at ? `${L.fmtDate(String(o.plan_ends_at).slice(0, 10))} ${L.planActive(o) ? '' : '<span class="badge b-overdue">Expiré</span>'}` : '—'}</td>
           <td class="r num">${o.students}${o.max_students ? ' / ' + o.max_students : ''}</td><td class="r num">${o.centers}</td>
@@ -192,7 +192,7 @@ export const admin = {
       await modal({ title: o.name, body: `<div class="form-grid">
           ${field('Plan', select('plan', Object.entries(L.PLANS).map(([value, p]) => ({ value, label: p.label })), o.plan))}
           ${field('Valable jusqu\'au (vide = illimité)', input('plan_ends_at', o.plan_ends_at ? String(o.plan_ends_at).slice(0, 10) : '', { type: 'date' }))}
-          ${field('Limite élèves (vide = selon plan)', input('max_students', o.max_students, { type: 'number', min: 1 }))}
+          ${field('Limite étudiants (vide = selon plan)', input('max_students', o.max_students, { type: 'number', min: 1 }))}
           ${field('Limite sites (vide = selon plan)', input('max_centers', o.max_centers, { type: 'number', min: 1 }))}
           <div class="full actions"><button type="button" class="btn sm" data-plus="1">+1 mois</button><button type="button" class="btn sm" data-plus="12">+1 an</button></div></div>`,
         onOpen(ov) {

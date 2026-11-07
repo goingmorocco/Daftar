@@ -79,3 +79,12 @@ t('waitlist alerts + plans', () => {
   assert.equal(L.planActive({ plan_ends_at: '2000-01-01' }), false);
 });
 console.log(`${n} test groups passed`);
+t('conflicts', () => {
+  const s = [{ group_id: 'a', date: '2026-11-09', start_time: '18:00', end_time: '19:30', teacher_id: 't', room_id: 'r1', status: 'scheduled' },
+             { group_id: 'b', date: '2026-11-09', start_time: '19:00', end_time: '20:00', teacher_id: 't', room_id: 'r2', status: 'scheduled' },
+             { group_id: 'c', date: '2026-11-09', start_time: '19:30', end_time: '21:00', teacher_id: 'x', room_id: 'r1', status: 'scheduled' },
+             { group_id: 'd', date: '2026-11-09', start_time: '18:30', end_time: '19:00', teacher_id: 't', room_id: 'r3', status: 'cancelled' }];
+  const c = L.findConflicts(s);
+  assert.equal(c.length, 1); assert.equal(c[0].type, 'teacher');
+});
+console.log('conflicts ok');

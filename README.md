@@ -1,6 +1,6 @@
 # Daftar — center management
 
-Management app (EuroPass red & blue, Comfortaa, collapsible menu) for tutoring, language and training centers in Morocco: students, groups, timetable, attendance, invoices and cash payments, WhatsApp reminders, waiting list, teacher payroll, expenses, team roles and subscription plans. Multi-center (SaaS): every center's data is isolated by Supabase row-level security.
+Management app (minimal white design, EuroPass red & blue for text and icons, Comfortaa, collapsible menu, Ctrl K search) for tutoring, language and training centers in Morocco: students, groups, timetable, attendance, invoices and cash payments, WhatsApp reminders, waiting list, teacher payroll, expenses, team roles and subscription plans. Multi-center (SaaS): every center's data is isolated by Supabase row-level security.
 
 ## Files
 | Path | What it is |
@@ -24,7 +24,8 @@ Management app (EuroPass red & blue, Comfortaa, collapsible menu) for tutoring, 
 - **EuroPass Academy** is already set up as the first center (owner: hitaklite@gmail.com — same password as the EuroPass site). That account is also the **platform admin**: the "Plateforme" page lists every center and lets you set plan, expiry date and limits after a client pays.
 - New center owners sign up, choose "Créer mon centre" and get a **15-day trial**.
 - Staff and teachers sign up, choose "Rejoindre une équipe" and enter the center's **team code** (shown on the Équipe page); the owner approves them.
-- Roles: **Admin** = everything, including finances (monthly figures, received-payments ledger, expenses, teacher payroll), settings and team · **Employé** = students, groups, timetable, taking payments, reminders and waiting list, with no financial overview · **Enseignant** = own groups, timetable and attendance only. Expenses and payroll are also locked to admins in the database.
+- Menu: **Aperçu** (Tableau de bord, Emploi du temps, Conflits) · **Académique** (Groupes, Étudiants, Étudiants sortis, Liste d'attente, Enseignants) · **Finances** (Bilan mensuel, Paiements, Dépenses, Suivis) · **Centre** (Paramètres, Équipe, Abonnement).
+- Roles: **Admin** = everything, including finances (Bilan mensuel, received-payments ledger, expenses, teacher payroll), settings and team · **Employé** = students, groups, timetable, taking payments, reminders and waiting list, with no financial overview · **Enseignant** = own groups, timetable and attendance only. Expenses and payroll are also locked to admins in the database.
 
 ## Plans (enforced in the database)
 Trial 500 students / 3 sites (15 days) · Starter 199 DH: 150 / 1 · Growth 399 DH: 500 / 3 · Enterprise: unlimited. When a plan expires the center becomes read-only until renewed.

@@ -31,16 +31,16 @@ export async function studentDialog(app, st = null, preset = {}) {
   const pg = preset.group_id ? app.by('groups', preset.group_id) : null;
   const groups = app.s.groups.filter(g => g.active);
   const enrollBlock = isNew ? `
-    <div class="full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px"><h3>Inscription</h3><p class="small muted">Optionnel — vous pourrez inscrire l'élève à d'autres groupes ensuite.</p></div>
+    <div class="full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px"><h3>Inscription</h3><p class="small muted">Optionnel — vous pourrez inscrire l'étudiant à d'autres groupes ensuite.</p></div>
     ${field('Groupe', select('group_id', opts(groups, g => groupLabel(app, g)), pg?.id || '', { empty: '— Aucun pour l\'instant —' }))}
     ${field('Prix mensuel (' + app.cur + ')', input('monthly_price', pg ? groupPrice(app, pg) : '', { type: 'number', step: '0.01', min: 0, placeholder: 'Rempli selon le niveau et la matière' }))}
     ${field('Début', input('start_date', L.today(), { type: 'date' }))}
     ${field('Fin (optionnel)', input('end_date', '', { type: 'date' }))}` : '';
   return modal({
-    title: isNew ? 'Nouvel élève' : 'Modifier l\'élève', wide: true,
+    title: isNew ? 'Nouvel étudiant' : 'Modifier l\'étudiant', wide: true,
     body: `<div class="form-grid">
       ${field('Nom complet', input('full_name', st.full_name, { required: true }), 'full')}
-      ${field('Téléphone élève', input('phone', st.phone, { type: 'tel', placeholder: '06…' }))}
+      ${field('Téléphone étudiant', input('phone', st.phone, { type: 'tel', placeholder: '06…' }))}
       ${field('Niveau', select('level_id', opts(app.s.levels), st.level_id, { empty: '—' }))}
       ${field('Nom du parent', input('parent_name', st.parent_name))}
       ${field('Téléphone parent (WhatsApp)', input('parent_phone', st.parent_phone, { type: 'tel', placeholder: '06…' }))}
@@ -63,7 +63,7 @@ export async function studentDialog(app, st = null, preset = {}) {
           end_date: nullIfEmpty(d.end_date), monthly_price: num(d.monthly_price) ?? groupPrice(app, app.by('groups', d.group_id)) });
         await app.run(() => invoiceNewEnrollment(app, e));
       }
-      toast(isNew ? 'Élève ajouté.' : 'Élève mis à jour.');
+      toast(isNew ? 'Étudiant ajouté.' : 'Étudiant mis à jour.');
       await app.refresh('students', 'enrollments', 'invoices');
       return saved;
     },
@@ -81,7 +81,7 @@ export async function enrollDialog(app, { student = null, group = null, enrollme
     title: isNew ? 'Inscrire à un groupe' : 'Modifier l\'inscription',
     body: `<div class="form-grid">
       ${student || !isNew ? `<input type="hidden" name="student_id" value="${esc(student?.id || e.student_id)}"><div class="full"><b>${esc(app.name('students', student?.id || e.student_id))}</b></div>`
-        : field('Élève', select('student_id', opts(students, 'full_name'), '', { empty: 'Choisir…', required: true }), 'full')}
+        : field('Étudiant', select('student_id', opts(students, 'full_name'), '', { empty: 'Choisir…', required: true }), 'full')}
       ${group || !isNew ? `<input type="hidden" name="group_id" value="${esc(g0.id)}">${field('Groupe', `<input value="${esc(g0.name)}" disabled>`)}`
         : field('Groupe', select('group_id', opts(groups, g => groupLabel(app, g)), '', { empty: 'Choisir…', required: true }))}
       ${field('Prix mensuel (' + app.cur + ')', input('monthly_price', isNew ? (g0 ? groupPrice(app, g0) : '') : e.monthly_price, { type: 'number', step: '0.01', min: 0, required: true }))}
@@ -115,7 +115,7 @@ export async function paymentDialog(app, { student, invoice = null }) {
   const open = app.fin.invoices.filter(i => i.student_id === student.id && i.remaining > 0 && i.status !== 'cancelled')
     .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
   if (!open.length && !invoice) {
-    toast('Aucune facture ouverte pour cet élève. Créez d\'abord une facture.', 'err'); return null;
+    toast('Aucune facture ouverte pour cet étudiant. Créez d\'abord une facture.', 'err'); return null;
   }
   const inv = invoice || open[0];
   const result = await modal({
@@ -156,7 +156,7 @@ export async function invoiceDialog(app, { student = null } = {}) {
     title: 'Nouvelle facture',
     body: `<div class="form-grid">
       ${student ? `<input type="hidden" name="student_id" value="${esc(student.id)}"><div class="full"><b>${esc(student.full_name)}</b></div>`
-        : field('Élève', select('student_id', opts(students, 'full_name'), '', { empty: 'Choisir…', required: true }), 'full')}
+        : field('Étudiant', select('student_id', opts(students, 'full_name'), '', { empty: 'Choisir…', required: true }), 'full')}
       ${field('Description', input('description', '', { required: true, placeholder: "Frais d'inscription, livre, stage…" }), 'full')}
       ${field('Montant (' + app.cur + ')', input('amount', '', { type: 'number', step: '0.01', min: 0, required: true }))}
       ${field('Échéance', input('due_date', L.today(), { type: 'date', required: true }))}
@@ -177,7 +177,7 @@ export function receiptHtml(app, pay) {
     <div class="rh"><div><h2>${esc(app.org.name)}</h2><div class="small">${esc(app.org.address || app.org.city || '')}${app.org.phone ? ' · ' + esc(app.org.phone) : ''}</div></div>
       <div style="text-align:right"><b>REÇU</b><div class="small">${L.fmtDate(pay.paid_at)}</div></div></div>
     <table>
-      <tr><td>Élève</td><td style="text-align:right"><b>${esc(st.full_name || '')}</b></td></tr>
+      <tr><td>Étudiant</td><td style="text-align:right"><b>${esc(st.full_name || '')}</b></td></tr>
       ${inv ? `<tr><td>Facture</td><td style="text-align:right">${invNo(inv)} — ${esc(inv.description || '')}</td></tr>` : ''}
       <tr><td>Mode</td><td style="text-align:right">${METHOD[pay.method] || pay.method}${pay.reference ? ' · ' + esc(pay.reference) : ''}</td></tr>
       <tr><td>Montant reçu</td><td style="text-align:right;font-size:18px"><b>${app.money(pay.amount)}</b></td></tr>

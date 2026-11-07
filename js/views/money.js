@@ -38,11 +38,11 @@ export const payments = {
       }).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)) || (a.number - b.number));
       const toGen = L.plannedInvoices(app.s.enrollments, app.s.groups, app.s.invoices, ms).length;
       body = `<div class="card"><div class="toolbar">
-          <div class="search">${icon('search')}<input data-input="q" placeholder="Élève, description, n° de facture…" value="${esc(st.q || '')}"></div>
+          <div class="search">${icon('search')}<input data-input="q" placeholder="Étudiant, description, n° de facture…" value="${esc(st.q || '')}"></div>
           ${select('status', [{ value: 'open', label: 'Tous les impayés (tous mois)' }, { value: 'overdue', label: 'En retard' }, { value: 'partial', label: 'Partielles' }, { value: 'pending', label: 'En attente' }, { value: 'paid', label: 'Payées' }, { value: 'cancelled', label: 'Annulées' }], st.status || '', { empty: 'Toutes les factures du mois' }).replace('<select', '<select data-change="filter"')}
           ${toGen && app.active ? `<button class="btn" data-act="generate">${icon('refresh')}Générer ${toGen} mensualité(s)</button>` : ''}
         </div>
-        ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>N°</th><th>Élève</th><th class="hide-sm">Description</th><th class="hide-sm">Échéance</th><th>Statut</th><th class="r">Montant</th><th class="r">Reste</th><th></th></tr></thead><tbody>
+        ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>N°</th><th>Étudiant</th><th class="hide-sm">Description</th><th class="hide-sm">Échéance</th><th>Statut</th><th class="r">Montant</th><th class="r">Reste</th><th></th></tr></thead><tbody>
           ${list.map(i => `<tr><td class="nowrap small">${invNo(i)}</td><td><a href="#/students/${i.student_id}" class="cell-main">${esc(app.name('students', i.student_id))}</a></td>
             <td class="hide-sm">${esc(i.description || '')}</td><td class="hide-sm nowrap">${L.fmtDate(i.due_date)}</td><td>${invBadge(i.status)}</td>
             <td class="r num">${app.money(i.amount)}</td><td class="r num">${i.remaining ? `<b>${app.money(i.remaining)}</b>` : '—'}</td>
@@ -53,16 +53,16 @@ export const payments = {
         .sort((a, b) => b.paid_at.localeCompare(a.paid_at) || String(b.created_at).localeCompare(String(a.created_at)));
       const by = Object.keys(METHOD).map(m => [m, list.filter(p => p.method === m).reduce((s, p) => s + Number(p.amount), 0)]).filter(([, v]) => v);
       body = `<div class="kpis k4">${by.map(([m, v]) => kpi(METHOD[m], `${L.money(v, '').trim()}<small>${esc(app.cur)}</small>`)).join('') || ''}</div>
-        <div class="card"><div class="toolbar"><div class="search">${icon('search')}<input data-input="q" placeholder="Élève, référence…" value="${esc(st.q || '')}"></div>
+        <div class="card"><div class="toolbar"><div class="search">${icon('search')}<input data-input="q" placeholder="Étudiant, référence…" value="${esc(st.q || '')}"></div>
           <button class="btn" data-act="exportPayments">${icon('download')}Exporter</button></div>
-        ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Élève</th><th class="hide-sm">Facture</th><th>Mode</th><th class="hide-sm">Reçu par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
+        ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Étudiant</th><th class="hide-sm">Facture</th><th>Mode</th><th class="hide-sm">Reçu par</th><th class="r">Montant</th><th></th></tr></thead><tbody>
           ${list.map(p => { const i = app.by('invoices', p.invoice_id); return `<tr><td class="nowrap">${L.fmtDate(p.paid_at)}</td><td><a href="#/students/${p.student_id}" class="cell-main">${esc(app.name('students', p.student_id))}</a></td>
             <td class="hide-sm small">${i ? invNo(i) + ' · ' + esc(i.description || '') : '—'}</td><td>${METHOD[p.method] || p.method}${p.reference ? `<div class="cell-sub">${esc(p.reference)}</div>` : ''}</td>
             <td class="hide-sm small">${esc(p.received_by_name || '')}</td><td class="r num"><b>${app.money(p.amount)}</b></td>
             <td class="r"><button class="btn sm ghost" data-act="receipt" data-id="${p.id}">${icon('print')}</button></td></tr>`; }).join('')}
           </tbody></table></div>` : emptyState('Aucun paiement ce mois-ci', '', '', 'wallet')}</div>`;
     }
-    return `${pageHead('Paiements', app.isManager ? 'Ce qui est facturé, encaissé, en attente ou en retard.' : 'Factures des élèves et encaissements.', `${monthNav(app)}
+    return `${pageHead('Paiements', app.isManager ? 'Ce qui est facturé, encaissé, en attente ou en retard.' : 'Factures des étudiants et encaissements.', `${monthNav(app)}
         <button class="btn" data-act="newInvoice">${icon('receipt')}Facture ponctuelle</button><button class="btn primary" data-act="newPayment">${icon('wallet')}Encaisser</button>`)}
       ${app.isManager ? moneyKpis(app, ms, me) + `<div class="tabs"><a href="#/payments?tab=invoices" class="${tab === 'invoices' ? 'on' : ''}">Factures</a><a href="#/payments?tab=received" class="${tab === 'received' ? 'on' : ''}">Paiements reçus</a></div>` : ''}
       ${body}`;
@@ -81,13 +81,13 @@ export const payments = {
     async pay(el, app) { const i = app.by('invoices', el.dataset.id); await paymentDialog(app, { student: app.by('students', i.student_id), invoice: i }); },
     newInvoice: (el, app) => invoiceDialog(app),
     async newPayment(el, app) {
-      const st = await pickStudent(app, 'Encaisser — choisir l\'élève', s => app.fin.byStudent.get(s.id)?.some(i => i.remaining > 0));
+      const st = await pickStudent(app, 'Encaisser — choisir l\'étudiant', s => app.fin.byStudent.get(s.id)?.some(i => i.remaining > 0));
       if (st) await paymentDialog(app, { student: st });
     },
     receipt: (el, app) => receiptDialog(app, app.s.payments.find(p => p.id === el.dataset.id)),
     exportPayments(el, app) {
       const ms = app.viewState.month, me = L.monthEnd(ms);
-      exportCsv(`paiements-${ms.slice(0, 7)}.csv`, ['Date', 'Élève', 'Facture', 'Description', 'Mode', 'Référence', 'Reçu par', 'Montant'],
+      exportCsv(`paiements-${ms.slice(0, 7)}.csv`, ['Date', 'Étudiant', 'Facture', 'Description', 'Mode', 'Référence', 'Reçu par', 'Montant'],
         app.s.payments.filter(p => p.paid_at >= ms && p.paid_at <= me).map(p => { const i = app.by('invoices', p.invoice_id) || {};
           return [p.paid_at, app.name('students', p.student_id), i.number ? invNo(i) : '', i.description || '', METHOD[p.method], p.reference, p.received_by_name, p.amount]; }));
     },
@@ -117,7 +117,7 @@ export const reminders = {
       : x.kind === 'soon' ? (x.days >= 0 ? `à régler sous ${x.days} jour(s) · ${app.money(x.invoice.remaining)}` : 'échéance dépassée')
       : (x.days >= 0 ? `se termine dans ${x.days} jour(s)` : `terminée depuis ${-x.days} jour(s)`);
     const tabs = [['unpaid', 'Impayés'], ['soon', 'Bientôt dus'], ['renewal', 'Fin d\'inscription']];
-    return `${pageHead('Relances WhatsApp', 'Chaque jour : qui n\'a pas payé ou doit renouveler, avec le message déjà écrit.',
+    return `${pageHead('Suivis', 'Chaque jour : qui n\'a pas payé ou doit renouveler, avec le message déjà écrit.',
       app.isManager ? `<a class="btn" href="#/settings?tab=messages">${icon('edit')}Modifier les messages</a>` : '')}
       <div class="tabs">${tabs.map(([k, l]) => `<a href="#/reminders?tab=${k}" class="${tab === k ? 'on' : ''}">${l}${count(k) ? ` <span class="badge b-overdue plain">${count(k)}</span>` : ''}</a>`).join('')}</div>
       <div class="card"><div class="toolbar"><label class="check"><input type="checkbox" data-change="showSent"${st.showSent ? ' checked' : ''}> Afficher aussi les relances déjà envoyées aujourd'hui</label></div>
