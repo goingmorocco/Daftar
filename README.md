@@ -1,0 +1,35 @@
+# Daftar — center management
+
+Management app for tutoring, language and training centers in Morocco: students, groups, timetable, attendance, invoices and cash payments, WhatsApp reminders, waiting list, teacher payroll, expenses, team roles and subscription plans. Multi-center (SaaS): every center's data is isolated by Supabase row-level security.
+
+## Files
+| Path | What it is |
+|---|---|
+| `index.html`, `css/`, `js/` | The app (plain HTML/JS, no build step) |
+| `js/config.js` | App name, Supabase URL/key, WhatsApp number for plan requests |
+| `sql/01–04` | Database schema, security, EuroPass sign-up guard, EuroPass data import (all already applied) |
+| `tests/logic.test.mjs` | Business-rule tests: `node tests/logic.test.mjs` |
+
+## Run it
+- **Demo (no database):** open `index.html?demo` through any web server. Data lives in the browser only; the "Voir comme" menu switches between director, front desk and teacher.
+- **Locally:** `python3 -m http.server 8000` in this folder → http://localhost:8000
+
+## Publish on GitHub Pages
+1. Create a repository, upload this folder, then **Settings → Pages → Deploy from branch → main / root**.
+2. In Supabase (EuroPass project) → **Authentication → URL Configuration**, add the Pages URL (e.g. `https://<user>.github.io/daftar/`) to **Redirect URLs**, so confirmation and password-reset emails come back to the app.
+3. Optional: **Authentication → Emails** — customise the confirmation email text for Daftar.
+
+## Accounts and roles
+- **EuroPass Academy** is already set up as the first center (owner: hitaklite@gmail.com — same password as the EuroPass site). That account is also the **platform admin**: the "Plateforme" page lists every center and lets you set plan, expiry date and limits after a client pays.
+- New center owners sign up, choose "Créer mon centre" and get a **15-day trial**.
+- Staff and teachers sign up, choose "Rejoindre une équipe" and enter the center's **team code** (shown on the Équipe page); the owner approves them.
+- Roles: Owner/Admin = everything · Staff = students, groups, payments, reminders, expenses · Teacher = own groups, timetable and attendance only, no money.
+
+## Plans (enforced in the database)
+Trial 500 students / 3 sites (15 days) · Starter 199 DH: 150 / 1 · Growth 399 DH: 500 / 3 · Enterprise: unlimited. When a plan expires the center becomes read-only until renewed.
+
+## How the automation works
+- **Sessions** are created from each group's weekly slots (up to 6 weeks ahead) when the timetable is opened.
+- **Monthly invoices** are created on the 1st of each month (or the enrollment start date) for every active enrollment, when anyone from the staff opens the app. Turn off in Réglages.
+- **Late** = unpaid after due date + the grace period set in Réglages (default 7 days).
+- **Reminders** open WhatsApp with the message pre-written; sending one marks it done for the day.
