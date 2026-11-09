@@ -26,14 +26,29 @@ t('finance + student status', () => {
   const k = L.periodKpis({ invoices: f.invoices, payments: pays, expenses: [{ amount: 50, spent_at: '2026-11-03' }], payouts: [] }, '2026-11-01', '2026-11-30');
   assert.deepEqual(k, { billed: 300, collected: 100, pending: 200, overdue: 0, spent: 50, net: 50 });
 });
-t('planned invoices are idempotent and respect dates', () => {
-  const enr = [{ id: 'e1', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-11-15', monthly_price: 400, status: 'active' },
-               { id: 'e2', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-12-01', monthly_price: 400, status: 'active' },
-               { id: 'e3', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-09-01', end_date: '2026-10-31', monthly_price: 400, status: 'active' },
-               { id: 'e4', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-09-01', monthly_price: 0, status: 'active' }];
-  const rows = L.plannedInvoices(enr, [{ id: 'g', name: 'Maths' }], [], '2026-11-07');
-  assert.equal(rows.length, 1); assert.equal(rows[0].due_date, '2026-11-15'); assert.equal(rows[0].period_month, '2026-11-01');
-  assert.equal(L.plannedInvoices(enr, [], [{ enrollment_id: 'e1', period_month: '2026-11-01' }], '2026-11-07').length, 0);
+t('rolling 30-day cycles', () => {
+  const e = { id: 'e1', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-11-05', monthly_price: 400, status: 'active' };
+  // first invoice on the start date, created up to 5 days ahead
+  assert.equal(L.plannedCycles([e], [], [], '2026-10-30').length, 0);
+  const first = L.plannedCycles([e], [{ id: 'g', name: 'Maths' }], [], '2026-11-01');
+  assert.equal(first.length, 1); assert.equal(first[0].due_date, '2026-11-05'); assert.equal(first[0].description, 'Maths — du 05/11 au 04/12');
+  const inv = { ...first[0], id: 'i1' };
+  // unpaid → no new cycle
+  let f = L.computeFinance([inv], [], 7, '2026-12-20');
+  assert.equal(L.nextCycle(e, f.invoices).open.id, 'i1'); assert.equal(L.plannedCycles([e], [], f.invoices, '2026-12-20').length, 0);
+  // paid late on 12/11 → next due 12/12
+  f = L.computeFinance([inv], [{ invoice_id: 'i1', amount: 400, paid_at: '2026-11-12' }], 7, '2026-12-08');
+  assert.equal(L.nextCycle(e, f.invoices).start, '2026-12-12');
+  assert.equal(L.plannedCycles([e], [], f.invoices, '2026-12-06').length, 0);
+  assert.equal(L.plannedCycles([e], [], f.invoices, '2026-12-07')[0].due_date, '2026-12-12');
+  // paid early on 01/11 → keeps 05/11 anchor → next due 05/12
+  f = L.computeFinance([inv], [{ invoice_id: 'i1', amount: 400, paid_at: '2026-11-01' }], 7, '2026-11-02');
+  assert.equal(L.nextCycle(e, f.invoices).start, '2026-12-05');
+  // partial payment does not start a new cycle; end date stops cycles
+  f = L.computeFinance([inv], [{ invoice_id: 'i1', amount: 200, paid_at: '2026-11-05' }], 7, '2026-11-06');
+  assert.equal(L.nextCycle(e, f.invoices).start, null);
+  f = L.computeFinance([inv], [{ invoice_id: 'i1', amount: 400, paid_at: '2026-11-05' }], 7, '2026-12-02');
+  assert.equal(L.plannedCycles([{ ...e, end_date: '2026-12-01' }], [], f.invoices, '2026-12-02').length, 0);
 });
 t('planned sessions', () => {
   const g = [{ id: 'g', org_id: 'o', active: true, start_date: '2026-11-04', teacher_id: 't' }];
@@ -68,7 +83,7 @@ t('reminders', () => {
     groups: [{ id: 'g', name: 'Maths' }], reminderLog: [{ kind: 'soon', invoice_id: 'i2', sent_at: new Date(2026, 10, 6, 10).toISOString() }],
     settings: { late_grace_days: 7, tpl_unpaid: '{eleve} {mois} {reste}', tpl_soon: 's', tpl_renewal: 'r {date}' }, orgName: 'C' }, '2026-11-06');
   assert.deepEqual(r.map(x => x.kind).sort(), ['renewal', 'soon', 'unpaid']);
-  assert.equal(r.find(x => x.kind === 'unpaid').text, 'Adam octobre 2026 300');
+  assert.equal(r.find(x => x.kind === 'unpaid').text, 'Adam la période du 01/10 au 30/10 300');
   assert.equal(r.find(x => x.kind === 'soon').sent, true);
 });
 t('waitlist alerts + plans', () => {
