@@ -31,7 +31,7 @@ export const settings = {
         ${field('Délai avant « en retard » (jours)', input('late_grace_days', s.late_grace_days, { type: 'number', min: 0, max: 90 }))}
         ${field('Alerte liste d\'attente (demandes)', input('waitlist_threshold', s.waitlist_threshold, { type: 'number', min: 1, max: 100 }))}
         ${field('Devise', input('currency', s.currency))}
-        <label class="check" style="align-self:end"><input type="checkbox" name="auto_invoices"${s.auto_invoices ? ' checked' : ''}> Créer automatiquement chaque échéance (30 jours après le paiement précédent)</label>
+        <label class="check" style="align-self:end"><input type="checkbox" name="auto_invoices"${s.auto_invoices ? ' checked' : ''}> Créer automatiquement les mensualités chaque mois</label>
         ${field('Pied de page des reçus', input('receipt_footer', s.receipt_footer), 'full')}
       </div><div style="margin-top:14px"><button class="btn primary" type="submit">Enregistrer</button></div></form>
       <p class="small muted" style="margin-top:10px">Le délai est le nombre de jours qu'un parent a, après l'échéance, pour régler (ou finir un paiement commencé) avant que la facture passe « en retard ».</p>`;

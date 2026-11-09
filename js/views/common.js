@@ -22,7 +22,7 @@ export function groupChip(app, g) {
 /** Create the current-month invoice for a new enrollment when automatic invoicing is on. */
 export async function invoiceNewEnrollment(app, enrollment) {
   if (!app.settings.auto_invoices) return;
-  const rows = L.plannedCycles([enrollment], app.s.groups, []);
+  const rows = L.plannedInvoices([enrollment], app.s.groups, app.s.invoices, L.today());
   if (rows.length) await app.api.insert('ctr_invoices', rows, { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true });
 }
 

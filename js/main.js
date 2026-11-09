@@ -102,7 +102,7 @@ export const app = {
   },
   async autoInvoices() {
     if (!this.isStaff || !this.active || !this.settings.auto_invoices) return;
-    const rows = L.plannedCycles(this.s.enrollments, this.s.groups, this.fin.invoices);
+    const rows = L.plannedInvoices(this.s.enrollments, this.s.groups, this.s.invoices, L.today());
     if (!rows.length) return;
     await this.api.insert('ctr_invoices', rows, { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true }).catch(e => console.warn('invoices', e.message));
     await this.load(['ctr_invoices', 'ctr_organizations'].filter(t => TABLES.includes(t)));

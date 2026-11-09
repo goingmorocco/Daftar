@@ -32,6 +32,6 @@ Trial 500 students / 3 sites (15 days) · Starter 199 DH: 150 / 1 · Growth 399 
 
 ## How the automation works
 - **Sessions** are created from each group's weekly slots (up to 6 weeks ahead) when the timetable is opened.
-- **Billing is per student, every 30 days.** The first invoice is due on the enrollment start date. When it is fully paid, the next one is due 30 days after the payment (or 30 days after the due date if the student paid early, so early payers keep their date). Each invoice is created automatically 5 days before it is due, when anyone from the staff opens the app; partial or unpaid invoices hold the next cycle until settled. Turn off in Paramètres.
+- **Monthly invoices** are created on the 1st of each month (or the enrollment start date) for every active enrollment, when anyone from the staff opens the app. Turn off in Réglages.
 - **Late** = unpaid after due date + the grace period set in Réglages (default 7 days).
 - **Reminders** open WhatsApp with the message pre-written; sending one marks it done for the day.

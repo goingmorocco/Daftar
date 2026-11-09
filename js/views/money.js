@@ -36,11 +36,11 @@ export const payments = {
         }
         return L.matches(st.q, app.name('students', i.student_id), i.description, invNo(i));
       }).sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)) || (a.number - b.number));
-      const toGen = L.plannedCycles(app.s.enrollments, app.s.groups, app.fin.invoices).length;
+      const toGen = L.plannedInvoices(app.s.enrollments, app.s.groups, app.s.invoices, ms).length;
       body = `<div class="card"><div class="toolbar">
           <div class="search">${icon('search')}<input data-input="q" placeholder="Étudiant, description, n° de facture…" value="${esc(st.q || '')}"></div>
           ${select('status', [{ value: 'open', label: 'Tous les impayés (tous mois)' }, { value: 'overdue', label: 'En retard' }, { value: 'partial', label: 'Partielles' }, { value: 'pending', label: 'En attente' }, { value: 'paid', label: 'Payées' }, { value: 'cancelled', label: 'Annulées' }], st.status || '', { empty: 'Toutes les factures du mois' }).replace('<select', '<select data-change="filter"')}
-          ${toGen && app.active ? `<button class="btn" data-act="generate" title="Échéances arrivant dans les ${L.LOOKAHEAD_DAYS} prochains jours">${icon('refresh')}Créer ${toGen} échéance(s)</button>` : ''}
+          ${toGen && app.active ? `<button class="btn" data-act="generate">${icon('refresh')}Générer ${toGen} mensualité(s)</button>` : ''}
         </div>
         ${list.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>N°</th><th>Étudiant</th><th class="hide-sm">Description</th><th class="hide-sm">Échéance</th><th>Statut</th><th class="r">Montant</th><th class="r">Reste</th><th></th></tr></thead><tbody>
           ${list.map(i => `<tr><td class="nowrap small">${invNo(i)}</td><td><a href="#/students/${i.student_id}" class="cell-main">${esc(app.name('students', i.student_id))}</a></td>
@@ -72,9 +72,9 @@ export const payments = {
   actions: {
     ...monthActions,
     async generate(el, app) {
-      const rows = L.plannedCycles(app.s.enrollments, app.s.groups, app.fin.invoices);
+      const rows = L.plannedInvoices(app.s.enrollments, app.s.groups, app.s.invoices, app.viewState.month);
       if (!rows.length) return;
-      if (!(await confirmBox(`Créer ${rows.length} échéance(s) arrivant dans les ${L.LOOKAHEAD_DAYS} prochains jours ?`, { ok: 'Créer', danger: false }))) return;
+      if (!(await confirmBox(`Créer ${rows.length} mensualité(s) pour ${L.monthLabel(app.viewState.month)} ?`, { ok: 'Générer', danger: false }))) return;
       await app.run(() => app.api.insert('ctr_invoices', rows, { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true }), `${rows.length} facture(s) créée(s).`);
       await app.refresh('invoices');
     },

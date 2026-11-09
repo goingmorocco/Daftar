@@ -265,17 +265,6 @@ export const students = {
 
 export const alumni = { ...students, title: 'Étudiants sortis' };
 
-/** "Next payment" for one enrollment: the open invoice, or the next 30-day cycle. */
-export function nextDueCell(app, e) {
-  if (e.status !== 'active') return '<span class="muted">—</span>';
-  const n = L.nextCycle(e, app.fin.invoices);
-  if (n.open) return `${L.fmtDate(n.open.due_date)} ${invBadge(n.open.status)}`;
-  if (!n.start) return '—';
-  if (e.end_date && n.start > e.end_date) return '<span class="muted">Fin d\'inscription</span>';
-  const left = L.daysBetween(today(), n.start);
-  return `${L.fmtDate(n.start)} <span class="cell-sub">${left > 0 ? `dans ${left} j` : left === 0 ? "aujourd'hui" : ''}</span>`;
-}
-
 function studentDetail(app, id, tab) {
   const s = app.by('students', id);
   if (!s) return emptyState('Étudiant introuvable', '', '<a class="btn" href="#/students">Retour</a>');
@@ -287,10 +276,9 @@ function studentDetail(app, id, tab) {
   const tabs = [['enrollments', `Inscriptions (${enr.filter(e => e.status === 'active').length})`], ['invoices', `Factures (${invs.length})`], ['payments', `Paiements (${pays.length})`], ['attendance', 'Présences'], ['info', 'Fiche']];
   let body = '';
   if (tab === 'enrollments') {
-    body = enr.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th>Période</th><th>Prochaine échéance</th><th class="r">Mensualité</th><th></th></tr></thead><tbody>
+    body = enr.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th>Période</th><th class="r">Mensualité</th><th></th></tr></thead><tbody>
       ${enr.map(e => { const g = app.by('groups', e.group_id) || {}; return `<tr><td>${groupChip(app, g)} ${e.status === 'ended' ? '<span class="badge b-cancelled">Terminée</span>' : ''}</td>
         <td class="hide-sm">${esc(app.name('teachers', g.teacher_id))}</td><td class="nowrap">${L.fmtDate(e.start_date)} → ${e.end_date ? L.fmtDate(e.end_date) : '…'}</td>
-        <td class="nowrap">${nextDueCell(app, e)}</td>
         <td class="r num">${app.money(e.monthly_price)}</td>
         <td class="r nowrap"><button class="btn sm ghost" data-act="editEnroll" data-id="${e.id}">${icon('edit')}</button>${e.status === 'active' ? `<button class="btn sm ghost" data-act="endEnroll" data-id="${e.id}">Terminer</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></div>` : emptyState('Aucune inscription', '', `<button class="btn primary" data-act="enroll" data-id="${id}">${icon('plus')}Inscrire à un groupe</button>`, 'layers');
