@@ -112,23 +112,62 @@ export function plannedSessions(groups, slots, from, to) {
   return out;
 }
 
-/** Monthly invoices to create for `month` (any date inside it). Skips existing (enrollment_id, period_month). */
-export function plannedInvoices(enrollments, groups, existing, month) {
-  const ms = monthStart(month), me = monthEnd(month);
-  const have = new Set(existing.filter(i => i.enrollment_id && i.period_month).map(i => i.enrollment_id + '|' + String(i.period_month).slice(0, 10)));
+// ---------- 30-day billing from the enrollment's « Début » ----------
+// « Début » (enrollment.start_date) = start of the period the student has paid = date of the last payment.
+// The next payment is due Début + 30 days. Paying moves Début to the payment date (or to the due date if early).
+export const CYCLE_DAYS = 30;     // one payment covers 30 days
+export const LOOKAHEAD_DAYS = 5;  // an invoice is created this many days before it is due
+export const nextDue = e => addDays(e.start_date, CYCLE_DAYS);
+export const cycleEnd = start => addDays(start, CYCLE_DAYS - 1);
+export const periodLabel = start => `du ${fmtDate(start, false)} au ${fmtDate(cycleEnd(start), false)}`;
+export const cycleDescription = (groupName, start) => `${groupName || 'Cours'} — ${periodLabel(start)}`;
+
+/** The new Début once an invoice is fully paid on `paidAt`. */
+export function startAfterPayment(inv, paidAt) { return paidAt > inv.due_date ? paidAt : inv.due_date; }
+
+/** Open (unpaid or partly paid) invoice of an enrollment, if any. `rows` = finance rows. */
+export function openInvoice(e, rows) {
+  return rows.filter(i => i.enrollment_id === e.id && !i.cancelled && i.status !== 'paid')
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))[0] || null;
+}
+
+/**
+ * Unpaid invoices with no payment that no longer match the enrollment's dates
+ * (Début edited by hand, or invoices made with an older billing rule). Safe to delete and recreate.
+ */
+export function staleInvoices(enrollments, rows) {
+  const byId = new Map(enrollments.map(e => [e.id, e]));
+  return rows.filter(i => {
+    const e = i.enrollment_id && byId.get(i.enrollment_id);
+    if (!e || e.status !== 'active' || i.cancelled || i.paid > 0 || !i.period_month) return false;
+    const p = String(i.period_month).slice(0, 10);
+    if (!String(i.description || '').endsWith(periodLabel(p))) return true;   // made by an older billing rule
+    return p !== e.start_date && p !== nextDue(e);
+  });
+}
+
+/** Invoices to create now: Début + 30 for each active enrollment without an open invoice, once due within LOOKAHEAD_DAYS. */
+export function plannedCycles(enrollments, groups, rows, on = today()) {
   const gName = new Map(groups.map(g => [g.id, g.name]));
+  const have = new Set(rows.filter(i => i.enrollment_id && i.period_month && !i.cancelled).map(i => i.enrollment_id + '|' + String(i.period_month).slice(0, 10)));
   const out = [];
   for (const e of enrollments) {
-    if (e.status !== 'active') continue;
-    if (e.start_date > me) continue;
-    if (e.end_date && e.end_date < ms) continue;
-    if (!(Number(e.monthly_price) > 0)) continue;
-    if (have.has(e.id + '|' + ms)) continue;
-    out.push({ org_id: e.org_id, student_id: e.student_id, enrollment_id: e.id, period_month: ms,
-               description: `${gName.get(e.group_id) || 'Cours'} — ${monthLabel(ms)}`,
-               amount: Number(e.monthly_price), due_date: e.start_date > ms ? e.start_date : ms });
+    if (e.status !== 'active' || !(Number(e.monthly_price) > 0)) continue;
+    if (openInvoice(e, rows)) continue;
+    const start = nextDue(e);
+    if (e.end_date && start > e.end_date) continue;
+    if (start > addDays(on, LOOKAHEAD_DAYS)) continue;
+    if (have.has(e.id + '|' + start)) continue;
+    out.push({ org_id: e.org_id, student_id: e.student_id, enrollment_id: e.id, period_month: start,
+               description: cycleDescription(gName.get(e.group_id), start), amount: Number(e.monthly_price), due_date: start });
   }
   return out;
+}
+
+/** Invoice for the period starting on Début itself (first payment taken at enrollment). */
+export function firstPeriodInvoice(e, groupName) {
+  return { org_id: e.org_id, student_id: e.student_id, enrollment_id: e.id, period_month: e.start_date,
+           description: cycleDescription(groupName, e.start_date), amount: Number(e.monthly_price), due_date: e.start_date };
 }
 
 /** Price for a level+subject pair from the price grid. */
@@ -189,7 +228,8 @@ export function buildReminders({ invoices, enrollments, students, groups, remind
   for (const i of invoices) {
     const s = st.get(i.student_id); if (!s || s.status !== 'active') continue;
     const e = i.enrollment_id ? enr.get(i.enrollment_id) : null; const g = e ? gr.get(e.group_id) : null;
-    const base = { mois: i.period_month ? monthLabel(i.period_month) : (i.description || ''), montant: money(i.amount).replace(' DH', ''), reste: money(i.remaining).replace(' DH', '') };
+    const per = i.period_month ? `la période ${periodLabel(String(i.period_month).slice(0, 10))}` : (i.description || '');
+    const base = { mois: per, periode: per, montant: money(i.amount).replace(' DH', ''), reste: money(i.remaining).replace(' DH', '') };
     if (i.status === 'overdue') {
       out.push({ kind: 'unpaid', key: 'unpaid|' + i.id, student: s, group: g, invoice: i, enrollment: e, phone: s.parent_phone || s.phone,
                  days: daysBetween(i.due_date, on), sent: sentToday.has('unpaid|' + i.id),

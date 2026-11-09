@@ -1,5 +1,5 @@
 // Demo center with realistic sample data (fictional), generated relative to today.
-import { today, addDays, monthStart, addMonths, plannedInvoices, plannedSessions } from './logic.js';
+import { today, addDays, monthStart, addMonths, plannedSessions, cycleDescription, CYCLE_DAYS, LOOKAHEAD_DAYS } from './logic.js';
 
 let n = 0;
 const id = p => `${p}-${(++n).toString(16).padStart(8, '0')}-0000-4000-8000-000000000000`;
@@ -64,22 +64,24 @@ export function seedDemo() {
       enrollments.push({ id: id('enr'), org_id: org.id, student_id: s.id, group_id: g2.id, start_date: start, end_date: null, monthly_price: p2, status: 'active', created_at: s.created_at });
     }
   }
-  // invoices for the last 3 months + current, payments with a realistic pattern
+  // 30-day cycles from each enrollment's Début; paying moves Début to the payment date
   const invoices = [], payments = [];
   let seq = 0;
-  for (let m = -3; m <= 0; m++) {
-    const month = addMonths(monthStart(t0), m);
-    for (const inv of plannedInvoices(enrollments, groups, invoices, month)) {
-      const row = { ...inv, id: id('inv'), number: ++seq, cancelled: false, issued_at: month + 'T08:00:00Z' };
+  const gName = new Map(groups.map(g => [g.id, g.name]));
+  for (const e of enrollments) {
+    let start = e.start_date;
+    const pay = (row, amount, date, method) => payments.push({ id: id('pay'), org_id: org.id, invoice_id: row.id, student_id: e.student_id, amount, method, paid_at: date, received_by_name: 'Accueil', created_at: date + 'T10:00:00Z' });
+    while (start <= addDays(t0, LOOKAHEAD_DAYS)) {
+      if (e.end_date && start > e.end_date) break;
+      const row = { id: id('inv'), org_id: org.id, student_id: e.student_id, enrollment_id: e.id, period_month: start, number: ++seq, cancelled: false,
+        description: cycleDescription(gName.get(e.group_id), start), amount: e.monthly_price, due_date: start, issued_at: start + 'T08:00:00Z' };
       invoices.push(row);
-      const x = r();
-      const pay = (amount, date) => payments.push({ id: id('pay'), org_id: org.id, invoice_id: row.id, student_id: row.student_id, amount,
-        method: x < .8 ? 'cash' : x < .92 ? 'transfer' : 'cheque', paid_at: date > t0 ? t0 : date, received_by_name: 'Accueil', created_at: date + 'T10:00:00Z' });
-      if (m < 0) {
-        if (x < .82) pay(row.amount, addDays(row.due_date, Math.floor(r() * 8)));
-        else if (x < .92) pay(Math.round(row.amount / 2), addDays(row.due_date, 3));
-      } else if (x < .45) pay(row.amount, addDays(row.due_date, Math.floor(r() * 5)));
-      else if (x < .55) pay(Math.round(row.amount / 2), row.due_date);
+      const x = r(), method = x < .8 ? 'cash' : x < .92 ? 'transfer' : 'cheque';
+      const paidOn = addDays(start, Math.floor(r() * 9) - 2);   // 2 days early … 6 days late
+      if (paidOn > t0 || x > .9) { if (x > .9 && paidOn <= t0) pay(row, Math.round(e.monthly_price / 2), paidOn, method); break; }
+      pay(row, e.monthly_price, paidOn, method);
+      e.start_date = paidOn > start ? paidOn : start;            // Début = last payment
+      start = addDays(e.start_date, CYCLE_DAYS);
     }
   }
   org.invoice_seq = seq;

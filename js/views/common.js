@@ -19,11 +19,31 @@ export function groupChip(app, g) {
   return g ? `<span class="chip"><span class="sw" style="background:${esc(g.color || 'var(--primary)')}"></span>${esc(g.name)}</span>` : '';
 }
 
-/** Create the current-month invoice for a new enrollment when automatic invoicing is on. */
-export async function invoiceNewEnrollment(app, enrollment) {
-  if (!app.settings.auto_invoices) return;
-  const rows = L.plannedInvoices([enrollment], app.s.groups, app.s.invoices, L.today());
-  if (rows.length) await app.api.insert('ctr_invoices', rows, { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true });
+/**
+ * New enrollment: if the student pays the first period now, invoice the period starting on Début.
+ * Otherwise Début is their last payment date and the next invoice comes at Début + 30 days.
+ */
+export async function invoiceNewEnrollment(app, enrollment, payNow) {
+  if (!(Number(enrollment.monthly_price) > 0)) return;
+  const row = payNow ? L.firstPeriodInvoice(enrollment, app.name('groups', enrollment.group_id, ''))
+    : L.plannedCycles([enrollment], app.s.groups, [])[0];
+  if (row) await app.api.insert('ctr_invoices', [row], { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true });
+}
+
+/** Date fields shared by the student and enrollment dialogs: Début ↔ next payment are kept 30 days apart. */
+export function billingDateFields(e = {}, isNew = true) {
+  const start = e.start_date || L.today();
+  return `${field('Début de la période payée (dernier paiement)', input('start_date', start, { type: 'date', required: true }))}
+    ${field(`Prochaine échéance (Début + ${L.CYCLE_DAYS} jours)`, input('next_due', L.nextDue({ start_date: start }), { type: 'date' }))}
+    ${field('Fin (optionnel)', input('end_date', e.end_date, { type: 'date' }))}
+    ${isNew ? `<label class="check" style="align-self:end"><input type="checkbox" name="pay_now" checked> Facturer la première période maintenant</label>
+      <p class="full small muted" style="margin:0">Décochez si l'étudiant a déjà payé : indiquez alors la date de son dernier paiement comme « Début ».</p>` : ''}`;
+}
+export function bindBillingDates(ov) {
+  const st = ov.querySelector('[name=start_date]'), nx = ov.querySelector('[name=next_due]');
+  if (!st || !nx) return;
+  st.addEventListener('change', () => { if (st.value) nx.value = L.addDays(st.value, L.CYCLE_DAYS); });
+  nx.addEventListener('change', () => { if (nx.value) st.value = L.addDays(nx.value, -L.CYCLE_DAYS); });
 }
 
 export async function studentDialog(app, st = null, preset = {}) {
@@ -34,8 +54,7 @@ export async function studentDialog(app, st = null, preset = {}) {
     <div class="full" style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px"><h3>Inscription</h3><p class="small muted">Optionnel — vous pourrez inscrire l'étudiant à d'autres groupes ensuite.</p></div>
     ${field('Groupe', select('group_id', opts(groups, g => groupLabel(app, g)), pg?.id || '', { empty: '— Aucun pour l\'instant —' }))}
     ${field('Prix mensuel (' + app.cur + ')', input('monthly_price', pg ? groupPrice(app, pg) : '', { type: 'number', step: '0.01', min: 0, placeholder: 'Rempli selon le niveau et la matière' }))}
-    ${field('Début', input('start_date', L.today(), { type: 'date' }))}
-    ${field('Fin (optionnel)', input('end_date', '', { type: 'date' }))}` : '';
+    ${billingDateFields({}, true)}` : '';
   return modal({
     title: isNew ? 'Nouvel étudiant' : 'Modifier l\'étudiant', wide: true,
     body: `<div class="form-grid">
@@ -52,6 +71,7 @@ export async function studentDialog(app, st = null, preset = {}) {
     onOpen(ov) {
       const gSel = ov.querySelector('[name=group_id]'), price = ov.querySelector('[name=monthly_price]');
       if (gSel) gSel.addEventListener('change', () => { const g = app.by('groups', gSel.value); price.value = g ? groupPrice(app, g) : ''; });
+      bindBillingDates(ov);
     },
     onSubmit: async d => {
       const row = { full_name: d.full_name, phone: nullIfEmpty(d.phone), parent_name: nullIfEmpty(d.parent_name), parent_phone: nullIfEmpty(d.parent_phone),
@@ -61,7 +81,7 @@ export async function studentDialog(app, st = null, preset = {}) {
       if (isNew && d.group_id) {
         const e = await app.save('ctr_enrollments', { student_id: saved.id, group_id: d.group_id, start_date: d.start_date || L.today(),
           end_date: nullIfEmpty(d.end_date), monthly_price: num(d.monthly_price) ?? groupPrice(app, app.by('groups', d.group_id)) });
-        await app.run(() => invoiceNewEnrollment(app, e));
+        await app.run(() => invoiceNewEnrollment(app, e, !!d.pay_now));
       }
       toast(isNew ? 'Étudiant ajouté.' : 'Étudiant mis à jour.');
       await app.refresh('students', 'enrollments', 'invoices');
@@ -85,13 +105,13 @@ export async function enrollDialog(app, { student = null, group = null, enrollme
       ${group || !isNew ? `<input type="hidden" name="group_id" value="${esc(g0.id)}">${field('Groupe', `<input value="${esc(g0.name)}" disabled>`)}`
         : field('Groupe', select('group_id', opts(groups, g => groupLabel(app, g)), '', { empty: 'Choisir…', required: true }))}
       ${field('Prix mensuel (' + app.cur + ')', input('monthly_price', isNew ? (g0 ? groupPrice(app, g0) : '') : e.monthly_price, { type: 'number', step: '0.01', min: 0, required: true }))}
-      ${field('Début', input('start_date', e.start_date || L.today(), { type: 'date', required: true }))}
-      ${field('Fin (optionnel)', input('end_date', e.end_date, { type: 'date' }))}
+      ${billingDateFields(e, isNew)}
       ${!isNew ? field('Statut', select('status', [{ value: 'active', label: 'Active' }, { value: 'ended', label: 'Terminée' }], e.status)) : ''}
     </div>`,
     onOpen(ov) {
       const gSel = ov.querySelector('select[name=group_id]'), price = ov.querySelector('[name=monthly_price]');
       if (gSel) gSel.addEventListener('change', () => { const g = app.by('groups', gSel.value); price.value = g ? groupPrice(app, g) : ''; });
+      bindBillingDates(ov);
     },
     onSubmit: async d => {
       const row = { monthly_price: num(d.monthly_price) ?? 0, start_date: d.start_date, end_date: nullIfEmpty(d.end_date) };
@@ -100,13 +120,15 @@ export async function enrollDialog(app, { student = null, group = null, enrollme
         const count = app.s.enrollments.filter(x => x.group_id === d.group_id && x.status === 'active').length;
         if (g?.capacity && count >= g.capacity) toast(`Attention : le groupe dépasse sa capacité (${g.capacity}).`);
         const saved = await app.save('ctr_enrollments', { ...row, student_id: d.student_id, group_id: d.group_id });
-        await app.run(() => invoiceNewEnrollment(app, saved));
+        await app.run(() => invoiceNewEnrollment(app, saved, !!d.pay_now));
       } else {
         row.status = d.status;
         await app.save('ctr_enrollments', row, e.id);
       }
       toast('Inscription enregistrée.');
-      await app.refresh('enrollments', 'invoices');
+      await app.load(['ctr_enrollments', 'ctr_invoices']);
+      await app.autoInvoices();   // realign the unpaid invoice with the new dates
+      app.render();
     },
   });
 }
@@ -137,9 +159,16 @@ export async function paymentDialog(app, { student, invoice = null }) {
     onSubmit: async d => {
       const amount = num(d.amount);
       if (!(amount > 0)) throw new Error('Montant invalide.');
+      const target = app.by('invoices', d.invoice_id);
       const saved = await app.save('ctr_payments', { invoice_id: d.invoice_id, student_id: student.id, amount, method: d.method,
         paid_at: d.paid_at, reference: nullIfEmpty(d.reference), notes: nullIfEmpty(d.notes), received_by_name: app.me?.full_name || null });
-      await app.refresh('payments');
+      // period fully paid → Début moves to the payment date (or the due date if paid early): next payment = Début + 30
+      const enr = target?.enrollment_id && app.s.enrollments.find(x => x.id === target.enrollment_id);
+      if (enr && target.period_month && target.paid + amount >= Number(target.amount) - 0.005) {
+        const start = L.startAfterPayment(target, d.paid_at);
+        if (start > enr.start_date) await app.run(() => app.api.update('ctr_enrollments', { id: enr.id }, { start_date: start }));
+      }
+      await app.refresh('payments', 'enrollments');
       return saved;
     },
   });

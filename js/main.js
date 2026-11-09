@@ -100,12 +100,18 @@ export const app = {
       await this.api.insert('ctr_sessions', rows.slice(i, i + 500), { onConflict: 'group_id,date,start_time', ignoreDuplicates: true }).catch(e => console.warn('sessions', e.message));
     }
   },
+  /** Keep invoices in line with each enrollment's Début: drop stale unpaid ones, create the ones now due. */
   async autoInvoices() {
     if (!this.isStaff || !this.active || !this.settings.auto_invoices) return;
-    const rows = L.plannedInvoices(this.s.enrollments, this.s.groups, this.s.invoices, L.today());
+    const stale = L.staleInvoices(this.s.enrollments, this.fin.invoices);
+    if (stale.length) {
+      await this.api.removeMany('ctr_invoices', stale.map(i => i.id)).catch(e => console.warn('stale invoices', e.message));
+      await this.load(['ctr_invoices']);
+    }
+    const rows = L.plannedCycles(this.s.enrollments, this.s.groups, this.fin.invoices);
     if (!rows.length) return;
     await this.api.insert('ctr_invoices', rows, { onConflict: 'enrollment_id,period_month', ignoreDuplicates: true }).catch(e => console.warn('invoices', e.message));
-    await this.load(['ctr_invoices', 'ctr_organizations'].filter(t => TABLES.includes(t)));
+    await this.load(['ctr_invoices']);
   },
 
   // ---------- writes with feedback ----------

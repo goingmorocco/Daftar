@@ -60,6 +60,12 @@ export function supabaseApi(cfg) {
       const { error } = await applyFilters(sb.from(table).delete(), { eq: match });
       if (error) throw err(error);
     },
+    async removeMany(table, ids) {
+      for (let i = 0; i < ids.length; i += 200) {
+        const { error } = await sb.from(table).delete().in('id', ids.slice(i, i + 200));
+        if (error) throw err(error);
+      }
+    },
     async rpc(name, args = {}) { const { data, error } = await sb.rpc(name, args); if (error) throw err(error); return data; },
   };
 }
@@ -166,6 +172,11 @@ export function demoApi(seed) {
         if (t === 'ctr_sessions' && m.id) db.ctr_attendance = tbl('ctr_attendance').filter(r => r.session_id !== m.id);
         void ids;
       }
+      save();
+    },
+    async removeMany(t, ids) {
+      const set = new Set(ids); db[t] = tbl(t).filter(r => !set.has(r.id));
+      if (t === 'ctr_invoices') db.ctr_payments = tbl('ctr_payments').filter(p => !set.has(p.invoice_id));
       save();
     },
     async rpc(name, a = {}) {

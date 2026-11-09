@@ -198,10 +198,11 @@ export const students = {
           ${select('pay', [{ value: 'overdue', label: 'En retard' }, { value: 'partial', label: 'Partiel' }, { value: 'pending', label: 'En attente' }, { value: 'paid', label: 'À jour' }, { value: 'none', label: 'Sans facture' }], st.pay || '', { empty: 'Tous les paiements' }).replace('<select', '<select data-change="filter"')}
 
         </div>
-        ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Étudiant</th><th class="hide-sm">Groupes</th><th>Paiement</th><th class="r">Reste dû</th></tr></thead><tbody>
+        ${rows.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Étudiant</th><th class="hide-sm">Groupes</th><th class="hide-sm">Prochaine échéance</th><th>Paiement</th><th class="r">Reste dû</th></tr></thead><tbody>
           ${rows.map(({ s, enr }) => `<tr class="click" data-act="open" data-id="${s.id}">
             <td><div class="cell-main">${esc(s.full_name)}</div><div class="cell-sub">${esc(s.parent_phone || s.phone || '')}${s.parent_name ? ' · ' + esc(s.parent_name) : ''}</div></td>
             <td class="hide-sm"><div class="chips">${enr.map(e => groupChip(app, app.by('groups', e.group_id))).join('') || '<span class="muted small">Aucun groupe</span>'}</div></td>
+            <td class="hide-sm nowrap">${(() => { const n = enr.map(e => nextDueInfo(app, e)).filter(x => x.date).sort((a, b) => a.date.localeCompare(b.date))[0]; return n ? n.html : '<span class="muted">—</span>'; })()}</td>
             <td>${statusBadge(app.studentStatus.get(s.id))}</td>
             <td class="r num">${due(s.id) ? app.money(due(s.id)) : '—'}</td></tr>`).join('')}
         </tbody></table></div>` : emptyState(app.s.students.length ? 'Aucun résultat' : 'Aucun étudiant pour l\'instant', app.s.students.length ? 'Modifiez la recherche ou les filtres.' : 'Ajoutez votre premier étudiant et inscrivez-le à un groupe.', app.s.students.length ? '' : `<button class="btn primary" data-act="newStudent">${icon('plus')}Nouvel étudiant</button>`, 'users')}
@@ -265,6 +266,17 @@ export const students = {
 
 export const alumni = { ...students, title: 'Étudiants sortis' };
 
+/** Next payment for one enrollment: the open invoice if there is one, otherwise Début + 30 days. */
+export function nextDueInfo(app, e) {
+  if (e.status !== 'active') return { html: '<span class="muted">—</span>', date: null };
+  const open = L.openInvoice(e, app.fin.invoices);
+  if (open) return { date: open.due_date, html: `${L.fmtDate(open.due_date)} ${invBadge(open.status)}` };
+  const d = L.nextDue(e);
+  if (e.end_date && d > e.end_date) return { date: null, html: '<span class="muted">Fin d\'inscription</span>' };
+  const left = L.daysBetween(today(), d);
+  return { date: d, html: `${L.fmtDate(d)} <span class="cell-sub">${left > 0 ? `· dans ${left} j` : left === 0 ? "· aujourd'hui" : `· <span class="c-red">${-left} j de retard</span>`}</span>` };
+}
+
 function studentDetail(app, id, tab) {
   const s = app.by('students', id);
   if (!s) return emptyState('Étudiant introuvable', '', '<a class="btn" href="#/students">Retour</a>');
@@ -276,9 +288,10 @@ function studentDetail(app, id, tab) {
   const tabs = [['enrollments', `Inscriptions (${enr.filter(e => e.status === 'active').length})`], ['invoices', `Factures (${invs.length})`], ['payments', `Paiements (${pays.length})`], ['attendance', 'Présences'], ['info', 'Fiche']];
   let body = '';
   if (tab === 'enrollments') {
-    body = enr.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th>Période</th><th class="r">Mensualité</th><th></th></tr></thead><tbody>
+    body = enr.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Groupe</th><th class="hide-sm">Enseignant</th><th>Période payée</th><th>Prochaine échéance</th><th class="r">Mensualité</th><th></th></tr></thead><tbody>
       ${enr.map(e => { const g = app.by('groups', e.group_id) || {}; return `<tr><td>${groupChip(app, g)} ${e.status === 'ended' ? '<span class="badge b-cancelled">Terminée</span>' : ''}</td>
-        <td class="hide-sm">${esc(app.name('teachers', g.teacher_id))}</td><td class="nowrap">${L.fmtDate(e.start_date)} → ${e.end_date ? L.fmtDate(e.end_date) : '…'}</td>
+        <td class="hide-sm">${esc(app.name('teachers', g.teacher_id))}</td><td class="nowrap">${L.fmtDate(e.start_date)} → ${L.fmtDate(L.cycleEnd(e.start_date))}${e.end_date ? `<div class="cell-sub">Fin : ${L.fmtDate(e.end_date)}</div>` : ''}</td>
+        <td class="nowrap">${nextDueInfo(app, e).html}</td>
         <td class="r num">${app.money(e.monthly_price)}</td>
         <td class="r nowrap"><button class="btn sm ghost" data-act="editEnroll" data-id="${e.id}">${icon('edit')}</button>${e.status === 'active' ? `<button class="btn sm ghost" data-act="endEnroll" data-id="${e.id}">Terminer</button>` : ''}</td></tr>`; }).join('')}
       </tbody></table></div>` : emptyState('Aucune inscription', '', `<button class="btn primary" data-act="enroll" data-id="${id}">${icon('plus')}Inscrire à un groupe</button>`, 'layers');
@@ -287,7 +300,7 @@ function studentDetail(app, id, tab) {
       ${invs.map(i => `<tr><td class="nowrap">${invNo(i)}</td><td>${esc(i.description || '')}</td><td class="hide-sm">${L.fmtDate(i.due_date)}</td><td>${invBadge(i.status)}</td>
         <td class="r num">${app.money(i.amount)}</td><td class="r num">${i.remaining ? app.money(i.remaining) : '—'}</td>
         <td class="r nowrap">${i.remaining > 0 ? `<button class="btn sm" data-act="pay" data-id="${id}" data-inv="${i.id}">Encaisser</button>` : ''}${i.status !== 'cancelled' && !i.paid ? `<button class="btn sm ghost" data-act="cancelInvoice" data-id="${i.id}" title="Annuler">${icon('x')}</button>` : ''}</td></tr>`).join('')}
-      </tbody></table></div>` : emptyState('Aucune facture', 'Les mensualités sont créées automatiquement chaque mois pour les inscriptions actives.', `<button class="btn" data-act="invoice" data-id="${id}">${icon('plus')}Facture ponctuelle</button>`, 'receipt');
+      </tbody></table></div>` : emptyState('Aucune facture', `Chaque échéance est créée automatiquement ${L.LOOKAHEAD_DAYS} jours avant sa date (Début + ${L.CYCLE_DAYS} jours).`, `<button class="btn" data-act="invoice" data-id="${id}">${icon('plus')}Facture ponctuelle</button>`, 'receipt');
   } else if (tab === 'payments') {
     body = pays.length ? `<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Facture</th><th>Mode</th><th class="r">Montant</th><th></th></tr></thead><tbody>
       ${pays.map(p => { const i = app.by('invoices', p.invoice_id); return `<tr><td>${L.fmtDate(p.paid_at)}</td><td>${i ? invNo(i) + ' · ' + esc(i.description || '') : '—'}</td><td>${METHOD[p.method] || p.method}</td>
@@ -415,7 +428,8 @@ export const groups = {
     edit: async (el, app) => { await groupDialog(app, app.by('groups', el.dataset.id)); },
     enroll: async (el, app) => { await enrollDialog(app, { group: app.by('groups', el.dataset.id) }); },
     addStudent: async (el, app) => { const s = await studentDialog(app); if (s?.id) await enrollDialog(app, { student: s, group: app.by('groups', el.dataset.id) }); },
-    student: (el, app) => app.isStaff && app.go('#/students/' + el.dataset.id),
+    student: (el, app, ev) => { if (ev?.target.closest('[data-act=editEnroll]')) return; if (app.isStaff) app.go('#/students/' + el.dataset.id); },
+    editEnroll: async (el, app, ev) => { ev?.stopPropagation(); await enrollDialog(app, { enrollment: app.s.enrollments.find(x => x.id === el.dataset.id) }); },
     attendance: (el, app) => import('./schedule.js').then(m => m.attendanceDialog(app, el.dataset.id)),
     async deleteGroup(el, app) {
       const n = app.s.enrollments.filter(e => e.group_id === el.dataset.id).length;
@@ -444,7 +458,8 @@ function groupDetail(app, id) {
     <div class="grid grid-2" style="grid-template-columns:1.4fr 1fr">
       <div class="card"><div class="card-head"><h2>Étudiants inscrits</h2></div>
         ${roster.length ? `<div class="table-wrap"><table class="t"><tbody>${roster.map(({ s, e }) => `<tr class="${app.isStaff ? 'click' : ''}" data-act="student" data-id="${s.id}"><td><div class="cell-main">${esc(s.full_name)}</div><div class="cell-sub">${esc(s.parent_phone || s.phone || '')}</div></td>
-          <td class="small muted hide-sm">depuis ${L.fmtDate(e.start_date)}</td>${app.isStaff ? `<td class="r">${statusBadge(app.studentStatus.get(s.id))}</td>` : ''}</tr>`).join('')}</tbody></table></div>`
+          ${app.isStaff ? `<td class="nowrap small hide-sm">${nextDueInfo(app, e).html}</td><td class="r nowrap">${statusBadge(app.studentStatus.get(s.id))}<button class="btn sm ghost" data-act="editEnroll" data-id="${e.id}" title="Modifier les dates">${icon('edit')}</button></td>`
+            : `<td class="small muted hide-sm">depuis ${L.fmtDate(e.start_date)}</td>`}</tr>`).join('')}</tbody></table></div>`
           : emptyState('Aucun étudiant inscrit', '', app.isStaff ? `<button class="btn primary" data-act="enroll" data-id="${id}">${icon('plus')}Inscrire un étudiant</button>` : '', 'users')}</div>
       <div class="grid" style="align-content:start">
         <div class="card"><div class="card-head"><h2>Prochaines séances</h2></div><div class="list">${next.map(sessRow).join('') || emptyState('Aucune séance prévue', app.isStaff ? 'Ajoutez des créneaux dans « Modifier ».' : '', '', 'calendar')}</div></div>

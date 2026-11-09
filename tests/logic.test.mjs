@@ -26,14 +26,41 @@ t('finance + student status', () => {
   const k = L.periodKpis({ invoices: f.invoices, payments: pays, expenses: [{ amount: 50, spent_at: '2026-11-03' }], payouts: [] }, '2026-11-01', '2026-11-30');
   assert.deepEqual(k, { billed: 300, collected: 100, pending: 200, overdue: 0, spent: 50, net: 50 });
 });
-t('planned invoices are idempotent and respect dates', () => {
-  const enr = [{ id: 'e1', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-11-15', monthly_price: 400, status: 'active' },
-               { id: 'e2', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-12-01', monthly_price: 400, status: 'active' },
-               { id: 'e3', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-09-01', end_date: '2026-10-31', monthly_price: 400, status: 'active' },
-               { id: 'e4', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-09-01', monthly_price: 0, status: 'active' }];
-  const rows = L.plannedInvoices(enr, [{ id: 'g', name: 'Maths' }], [], '2026-11-07');
-  assert.equal(rows.length, 1); assert.equal(rows[0].due_date, '2026-11-15'); assert.equal(rows[0].period_month, '2026-11-01');
-  assert.equal(L.plannedInvoices(enr, [], [{ enrollment_id: 'e1', period_month: '2026-11-01' }], '2026-11-07').length, 0);
+t('30-day billing from Début', () => {
+  const e = { id: 'e1', org_id: 'o', student_id: 's', group_id: 'g', start_date: '2026-10-01', monthly_price: 200, status: 'active' };
+  const G = [{ id: 'g', name: 'ISSAM' }];
+  // Début = last payment 01/10 → next due 31/10, created from 26/10
+  assert.equal(L.nextDue(e), '2026-10-31');
+  assert.equal(L.plannedCycles([e], G, [], '2026-10-25').length, 0);
+  const r1 = L.plannedCycles([e], G, [], '2026-10-26');
+  assert.equal(r1.length, 1); assert.equal(r1[0].due_date, '2026-10-31'); assert.equal(r1[0].description, 'ISSAM — du 31/10 au 29/11');
+  // open invoice blocks a second one; overdue after grace
+  let f = L.computeFinance([{ ...r1[0], id: 'i1' }], [], 7, '2026-11-09');
+  assert.equal(f.invoices[0].status, 'overdue'); assert.equal(L.plannedCycles([e], G, f.invoices, '2026-12-30').length, 0);
+  assert.equal(L.openInvoice(e, f.invoices).id, 'i1');
+  // paid late on 12/11 → Début 12/11 → next 12/12; early → keeps due date
+  assert.equal(L.startAfterPayment(r1[0], '2026-11-12'), '2026-11-12');
+  assert.equal(L.startAfterPayment(r1[0], '2026-10-29'), '2026-10-31');
+  const e2 = { ...e, start_date: '2026-11-12' };
+  f = L.computeFinance([{ ...r1[0], id: 'i1' }], [{ invoice_id: 'i1', amount: 200, paid_at: '2026-11-12' }], 7, '2026-12-08');
+  assert.equal(L.plannedCycles([e2], G, f.invoices, '2026-12-08')[0].due_date, '2026-12-12');
+  // stale: Début edited by hand → old unpaid invoice (no payment) is stale; paid ones never are
+  const legacy = { id: 'x', enrollment_id: 'e1', period_month: '2026-11-01', due_date: '2026-11-01', amount: 200 };
+  f = L.computeFinance([legacy, { ...r1[0], id: 'i1' }], [], 7, '2026-11-09');
+  assert.deepEqual(L.staleInvoices([e], f.invoices).map(i => i.id), ['x']);
+  f = L.computeFinance([legacy], [{ invoice_id: 'x', amount: 50, paid_at: '2026-11-02' }], 7, '2026-11-09');
+  assert.equal(L.staleInvoices([e], f.invoices).length, 0);
+  // old monthly invoice whose date happens to equal Début is still recognised as stale
+  const old = { id: 'm', enrollment_id: 'e1', period_month: '2026-11-01', due_date: '2026-11-01', amount: 200, description: 'ISSAM — novembre 2026' };
+  f = L.computeFinance([old], [], 7, '2026-11-09');
+  assert.deepEqual(L.staleInvoices([{ ...e, start_date: '2026-11-01' }], f.invoices).map(i => i.id), ['m']);
+  const okFirst = { ...L.firstPeriodInvoice({ ...e, start_date: '2026-11-01' }, 'ISSAM'), id: 'k' };
+  f = L.computeFinance([okFirst], [], 7, '2026-11-09');
+  assert.equal(L.staleInvoices([{ ...e, start_date: '2026-11-01' }], f.invoices).length, 0);
+  // first period paid at enrollment
+  assert.equal(L.firstPeriodInvoice({ ...e, start_date: '2026-11-09' }, 'ISSAM').due_date, '2026-11-09');
+  // end date stops billing
+  assert.equal(L.plannedCycles([{ ...e, end_date: '2026-10-20' }], G, [], '2026-10-30').length, 0);
 });
 t('planned sessions', () => {
   const g = [{ id: 'g', org_id: 'o', active: true, start_date: '2026-11-04', teacher_id: 't' }];
@@ -68,7 +95,7 @@ t('reminders', () => {
     groups: [{ id: 'g', name: 'Maths' }], reminderLog: [{ kind: 'soon', invoice_id: 'i2', sent_at: new Date(2026, 10, 6, 10).toISOString() }],
     settings: { late_grace_days: 7, tpl_unpaid: '{eleve} {mois} {reste}', tpl_soon: 's', tpl_renewal: 'r {date}' }, orgName: 'C' }, '2026-11-06');
   assert.deepEqual(r.map(x => x.kind).sort(), ['renewal', 'soon', 'unpaid']);
-  assert.equal(r.find(x => x.kind === 'unpaid').text, 'Adam octobre 2026 300');
+  assert.equal(r.find(x => x.kind === 'unpaid').text, 'Adam la période du 01/10 au 30/10 300');
   assert.equal(r.find(x => x.kind === 'soon').sent, true);
 });
 t('waitlist alerts + plans', () => {
