@@ -148,6 +148,7 @@ export const app = {
     root.innerHTML = shell(this, r.name, html);
     document.title = `${v.title || ''} · ${cfg.APP_NAME || 'Daftar'}`;
     if (focusKey) { const el = root.querySelector(`[data-input="${focusKey}"]`); if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch { /* not a text input */ } } }
+    labelTables(root);
     if (v.after) v.after(this, r, root);
   },
 };
@@ -200,19 +201,62 @@ function shell(app, current, content) {
   else if (app.org.plan === 'trial' && left !== null && left <= 15) banner += `<div class="banner warn">${icon('clock')}<span>Essai gratuit : ${left} jour(s) restant(s).</span>${app.isManager ? '<a class="btn sm" href="#/billing">Choisir un plan</a>' : ''}</div>`;
   const who = app.me?.full_name || app.user?.email || '';
   return `<div class="app${collapsed ? ' collapsed' : ''}" id="shell">
-    <aside class="sidebar">
-      <div class="side-head">${orgLogo(app.org.name)}<div class="org-meta"><div class="org-name">${esc(app.org.name)}</div><div class="org-role">${esc(ROLE_LABEL[app.role])}</div></div></div>
+    <div class="backdrop" data-act="closeNav" aria-hidden="true"></div>
+    <aside class="sidebar" aria-label="Menu principal">
+      <div class="side-head">${orgLogo(app.org.name)}<div class="org-meta"><div class="org-name">${esc(app.org.name)}</div><div class="org-role">${esc(ROLE_LABEL[app.role])}</div></div>
+        <button class="icon-btn side-close" data-act="closeNav" aria-label="Fermer le menu">${icon('x')}</button></div>
       <div class="side-scroll">${orgOpts}${centerSel}${nav(app, current)}</div>
       <div class="side-foot"><b>${esc((cfg.APP_NAME || 'Daftar').slice(0, 1))}</b>${esc((cfg.APP_NAME || 'Daftar').slice(1))} · gestion de centre</div>
     </aside>
     <div class="main">
       <header class="topbar">
-        <button class="icon-btn" data-act="sideToggle" title="Afficher / masquer le menu" aria-label="Afficher ou masquer le menu">${icon('sidebar')}</button>
-        <button class="cmd" data-act="palette" aria-label="Rechercher">${icon('search')}<span>Rechercher un étudiant, un groupe, une page…</span><kbd>Ctrl K</kbd></button>
+        <button class="icon-btn" data-act="sideToggle" title="Afficher / masquer le menu" aria-label="Menu"><span class="only-desk">${icon('sidebar')}</span><span class="only-mob">${icon('menu')}</span></button>
+        <button class="cmd" data-act="palette" aria-label="Rechercher">${icon('search')}<span class="only-desk">Rechercher un étudiant, un groupe, une page…</span><span class="only-mob">Rechercher…</span><kbd>Ctrl K</kbd></button>
         <button class="avatar" data-act="userMenu" title="${esc(who)}" aria-label="Mon compte">${esc(L.initials(who).slice(0, 1))}</button>
       </header>
       <div class="page">${banner}${content}</div>
-    </div></div>`;
+    </div>${tabbar(app, current)}</div>`;
+}
+
+/** Phone-only bottom navigation: the 4 most used pages + the full menu. */
+function tabbar(app, current) {
+  const items = app.isTeacher
+    ? [['schedule', 'calendar', 'Planning'], ['groups', 'layers', 'Groupes']]
+    : [['dashboard', 'home', 'Accueil'], ['students', 'users', 'Étudiants'], ['schedule', 'calendar', 'Planning'], ['payments', 'wallet', 'Paiements']];
+  const rem = app.isTeacher ? 0 : app.reminders.filter(x => !x.sent && x.kind === 'unpaid').length;
+  const onMenu = !items.some(([k]) => k === current);
+  return `<nav class="tabbar" aria-label="Navigation rapide">${items.map(([k, ic, l]) => `<a href="#/${k}" class="${current === k ? 'on' : ''}">${icon(ic)}<span>${l}</span></a>`).join('')}
+    <button data-act="navToggle" class="${onMenu ? 'on' : ''}">${icon('menu')}<span>Menu</span>${rem ? `<b class="dot">${rem > 99 ? '99+' : rem}</b>` : ''}</button></nav>`;
+}
+
+function setNav(open) {
+  const el = document.getElementById('shell'); if (!el) return;
+  el.classList.toggle('nav-open', open);
+  document.documentElement.classList.toggle('nav-lock', open);
+}
+
+/** Give every table cell the label of its column, so tables can turn into cards on phones. */
+function labelTables(scope) {
+  for (const t of scope.querySelectorAll('table.t')) {
+    const heads = [...t.querySelectorAll('thead th')].map(th => th.textContent.trim());
+    if (!heads.length) continue;
+    for (const tr of t.querySelectorAll('tbody tr')) [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; });
+  }
+}
+
+// ---------- install as an app (PWA) ----------
+let installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+async function installApp() {
+  if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice.catch(() => null); installPrompt = null; return; }
+  await modal({ title: "Installer l'application", cancel: 'Fermer', body: isIOS()
+    ? `<p>Sur iPhone / iPad, dans <b>Safari</b> :</p><ol style="padding-left:20px;line-height:1.9"><li>Touchez le bouton <b>Partager</b> (carré avec une flèche).</li><li>Choisissez <b>« Sur l'écran d'accueil »</b>.</li><li>Touchez <b>Ajouter</b>.</li></ol>`
+    : `<p>Dans le menu de votre navigateur (⋮), choisissez <b>« Installer l'application »</b> ou <b>« Ajouter à l'écran d'accueil »</b>.</p><p class="small muted">Chrome, Edge, Brave et Samsung Internet le proposent.</p>` });
+}
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw', e.message)));
 }
 
 // ---------- command palette ----------
@@ -261,7 +305,9 @@ function userMenu(btn) {
   const m = document.createElement('div');
   m.className = 'menu';
   m.innerHTML = `<div class="who"><b>${esc(app.me?.full_name || '')}</b><span class="small muted">${esc(app.user?.email || '')}</span><div class="small" style="color:var(--red);font-weight:700">${esc(ROLE_LABEL[app.role])}</div></div>
+    <button data-m="refresh">${icon('refresh')}Actualiser les données</button>
     <button data-m="theme">${icon('moon')}Thème clair / sombre</button>
+    ${isStandalone() ? '' : `<button data-m="install">${icon('download')}Installer l'application</button>`}
     ${app.isManager ? `<a href="#/billing">${icon('card')}Abonnement</a>` : ''}
     <button data-m="logout" class="danger">${icon('logout')}Déconnexion</button>`;
   document.body.appendChild(m);
@@ -271,13 +317,16 @@ function userMenu(btn) {
     const b = e.target.closest('[data-m], a'); if (!b) return;
     m.remove();
     if (b.dataset.m === 'theme') globalActions.theme();
+    if (b.dataset.m === 'refresh') { await app.refresh(); toast('Données à jour.'); }
+    if (b.dataset.m === 'install') await installApp();
     if (b.dataset.m === 'logout') await globalActions.logout();
   });
 }
 
 // ---------- global events ----------
 const globalActions = {
-  navToggle: () => document.getElementById('shell')?.classList.toggle('nav-open'),
+  navToggle: () => setNav(!document.getElementById('shell')?.classList.contains('nav-open')),
+  closeNav: () => setNav(false),
   sideToggle() { if (matchMedia('(max-width: 860px)').matches) globalActions.navToggle(); else globalActions.collapse(); },
   palette: () => openPalette(),
   userMenu: el => userMenu(el),
@@ -304,7 +353,7 @@ const globalChanges = {
 root.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]');
   if (!el || !root.contains(el)) {
-    if (e.target.closest('.nav a')) document.getElementById('shell')?.classList.remove('nav-open');
+    if (e.target.closest('.nav a, .tabbar a')) setNav(false);
     return;
   }
   const name = el.dataset.act;
@@ -331,7 +380,12 @@ root.addEventListener('submit', async e => {
   catch (err) { if (!err.handled) toast(L.friendlyError(err), 'err'); }
   finally { if (btn) btn.disabled = false; }
 });
-window.addEventListener('hashchange', () => app.render());
+window.addEventListener('hashchange', () => { document.documentElement.classList.remove('nav-lock'); app.render(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('shell')?.classList.contains('nav-open')) setNav(false); });
+// swipe the drawer to the left to close it
+let touchX = null;
+root.addEventListener('touchstart', e => { touchX = e.target.closest('.sidebar') ? e.touches[0].clientX : null; }, { passive: true });
+root.addEventListener('touchend', e => { if (touchX !== null && e.changedTouches[0].clientX - touchX < -60) setNav(false); touchX = null; }, { passive: true });
 
 // ---------- auth screens ----------
 function authShell(inner) {
@@ -459,5 +513,6 @@ async function boot() {
 
 try { const t = localStorage.getItem('daftar-theme'); if (t) document.documentElement.dataset.theme = t; } catch { /* ignore */ }
 app.api.onAuth((ev) => { if (ev === 'PASSWORD_RECOVERY') askNewPassword(); });
+app.labelTables = labelTables;
 window.daftar = app; // handy for support/debugging in the console
 boot();

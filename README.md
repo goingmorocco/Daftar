@@ -9,6 +9,7 @@ Management app (minimal white design, EuroPass red & blue for text and icons, Co
 | `js/config.js` | App name, Supabase URL/key, WhatsApp number for plan requests |
 | `sql/01–03` | Database schema, security rules, EuroPass sign-up guard (all already applied) |
 | `fonts/` | Comfortaa, self-hosted (SIL Open Font License) |
+| `manifest.webmanifest`, `sw.js`, `icons/` | Home-screen app: name, icons, offline cache (network first, so updates show immediately) |
 | `tests/logic.test.mjs` | Business-rule tests: `node tests/logic.test.mjs` |
 
 ## Run it
@@ -35,3 +36,8 @@ Trial 500 students / 3 sites (15 days) · Starter 199 DH: 150 / 1 · Growth 399 
 - **Billing: 30 days from « Début ».** Each enrollment's Début is the start of the period the student has paid (their last payment date). The next payment is due Début + 30 days and its invoice is created automatically 5 days before. When that invoice is fully paid, Début moves to the payment date (or stays on the due date if the student paid early), so the next payment is 30 days later. Début and the next due date can be edited on the enrollment (✏️ on the student page or the group roster); unpaid invoices that no longer match are replaced automatically. When enrolling a new student, « Facturer la première période maintenant » invoices the period starting on Début; untick it when the student has already paid. Turn off automatic invoices in Paramètres.
 - **Late** = unpaid after due date + the grace period set in Réglages (default 7 days).
 - **Reminders** open WhatsApp with the message pre-written; sending one marks it done for the day.
+
+## Phones and the home-screen app
+- On phones the app uses a bottom tab bar (Accueil, Étudiants, Planning, Paiements, Menu), a slide-out menu (close it by tapping outside, swiping left, ×, or choosing a page), tables shown as cards, and dialogs that slide up from the bottom.
+- **Install:** Android (Chrome, Brave, Samsung Internet, Edge) → browser menu ⋮ → *Installer l'application* / *Ajouter à l'écran d'accueil*. iPhone → Safari → Partager → *Sur l'écran d'accueil*. The avatar menu also has *Installer l'application*.
+- When you change files later, bump `CACHE` in `sw.js` (daftar-v1 → daftar-v2) so installed copies drop their old offline cache.

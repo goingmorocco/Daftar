@@ -1,0 +1,22 @@
+{
+  "name": "Daftar — gestion de centre",
+  "short_name": "Daftar",
+  "description": "Étudiants, groupes, emploi du temps, présences, paiements et relances WhatsApp.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Étudiants", "url": "./#/students", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Paiements", "url": "./#/payments", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Emploi du temps", "url": "./#/schedule", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

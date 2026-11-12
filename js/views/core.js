@@ -260,6 +260,7 @@ export const students = {
         <div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Groupe</th><th>Statut</th></tr></thead><tbody>
         ${list.map(({ a, s }) => `<tr><td>${L.fmtDate(s.date)} · ${L.fmtTime(s.start_time)}</td><td>${esc(app.name('groups', s.group_id))}</td><td><span class="badge b-${lbl[a.status][0]}">${lbl[a.status][1]}</span></td></tr>`).join('')}
         </tbody></table></div>` : emptyState('Aucune présence enregistrée', 'Les présences apparaissent ici dès qu\'elles sont prises en séance.', '', 'check');
+      app.labelTables?.(box);
     } catch (e) { box.innerHTML = `<div class="card-pad muted">${esc(L.friendlyError(e))}</div>`; }
   },
 };
